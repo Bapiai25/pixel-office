@@ -316,6 +316,12 @@ def main():
     cfg = load_config()
     if args.interval:
         cfg["interval_seconds"] = args.interval
+    # continue the audit trail across restarts instead of resetting to cycle 1
+    if os.path.exists(LOG):
+        try:
+            _STATE["cycle"] = sum(1 for l in open(LOG) if l.strip())
+        except Exception:
+            pass
 
     if args.check:
         print(f"config: {CONFIG}")
