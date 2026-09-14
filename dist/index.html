@@ -2228,11 +2228,25 @@ function openSettings(){
   const fast=mkSel('fastMode',[['on','FAST — short work animation (recommended)'],['off','CINEMATIC — full work animation']],state.fast?'on':'off');
   const lpEv=document.createElement('input'); lpEv.type='text'; lpEv.id='loopEvery';
   lpEv.value=String(state.loop.every); lpEv.placeholder='seconds between auto-loop runs (default 120)';
+  const status=document.createElement('div'); status.className='note'; status.id='llmStatus';
   const sep=document.createElement('div'); sep.className='note'; sep.style.margin='14px 0 8px';
   sep.innerHTML='<b style="color:var(--amber)">&#9656; TELEGRAM BOT</b> — create a bot with @BotFather, paste the token, then message your bot once so it can reply. Updates are sent straight from this browser to Telegram.';
   body.appendChild(sep);
   body.appendChild(row('Bot token',tgTok));
-  body.appendChild(row('Chat id',tgChat));
+  const findRow=document.createElement('div'); findRow.className='frow';
+  findRow.innerHTML='<span>Chat id</span>';
+  const fw=document.createElement('div'); fw.style.display='flex'; fw.style.gap='6px';
+  fw.appendChild(tgChat);
+  const find=document.createElement('button'); find.className='retro'; find.id='tgFind'; find.textContent='FIND';
+  find.title='Send your bot a message first, then this fills the chat id';
+  find.addEventListener('click',async()=>{
+    find.disabled=true; find.textContent='…';
+    try{ tgChat.value=await tgFindChat(tgTok.value); status.textContent='Chat id found: '+tgChat.value+' — press TEST TELEGRAM.'; }
+    catch(e){ status.textContent='Find chat id failed — '+e.message; }
+    find.disabled=false; find.textContent='FIND';
+  });
+  fw.appendChild(find);
+  findRow.appendChild(fw); body.appendChild(findRow);
   body.appendChild(row('Updates enabled',tgOn));
   body.appendChild(row('Send desk answers',tgEa));
   body.appendChild(row('Send market alerts',tgEl));
@@ -2242,7 +2256,6 @@ function openSettings(){
   body.appendChild(row('DeepSeek key',keys.deepseek));
   body.appendChild(row('Claude key',keys.claude));
   body.appendChild(row('ChatGPT key',keys.openai));
-  const status=document.createElement('div'); status.className='note'; status.id='llmStatus';
   status.textContent='Prices always come from the live CoinGecko/Binance/Coinbase feed — the LLM only writes the desk answer around them. Claude is called with its direct-browser-access header. Every answer, your GOOD/FLAG rating and paper-trade P&L are captured below and can be exported as a fine-tuning JSONL dataset.';
   body.appendChild(status);
   const acts=document.createElement('div'); acts.className='acts';
@@ -2446,6 +2459,17 @@ function tgPush(kind,text){
   if(!state.tg.on||!tgReady()||!state.tg.events[kind]) return;
   tgSend(text).then(()=>{ state.tg.last={at:Date.now(),ok:true,kind}; renderChips(); })
     .catch(e=>{ state.tg.last={at:Date.now(),ok:false,kind,err:e.message}; toast('Telegram: '+e.message,'bad'); renderChips(); });
+}
+async function tgFindChat(token){
+  const tk=(token||state.tg.token||'').trim();
+  if(!tk) throw new Error('paste the bot token first');
+  const r=await fetch('https://api.telegram.org/bot'+tk+'/getUpdates');
+  const d=await r.json().catch(()=>({}));
+  if(!d.ok) throw new Error(d.description||('getUpdates HTTP '+r.status));
+  const msgs=(d.result||[]).filter(u=>(u.message&&u.message.chat)||(u.channel_post&&u.channel_post.chat));
+  if(!msgs.length) throw new Error('no messages yet — open Telegram, send your bot any message, then retry');
+  const last=msgs[msgs.length-1];
+  return String(((last.message||last.channel_post).chat.id));
 }
 async function tgTest(){
   const d=await tgSend(tgFormat('report','Pixel Office is connected','Live market updates, desk answers and alerts will arrive in this chat.','test message'));
