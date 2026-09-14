@@ -170,6 +170,86 @@ async function main(){
   const outs=new Set(Object.keys(state.agents).map(id=>state.agents[id].outfit));
   assert(outs.size>=14, 'at least 14 distinct outfits ('+outs.size+')');
 
+  /* ---- telegram bot updates ---- */
+  state.tg={token:'123:ABC',chat:'99',on:true,events:{answer:true,alert:true,digest:true},last:null};
+  const before=D.tgCalls.length;
+  const q5=DESK.bossQuery('BTC latest price telegram test');
+  D.fireTimer(q5.timer);
+  await flush(6);
+  assert(D.tgCalls.length>before, 'desk answer pushed to Telegram ('+(D.tgCalls.length-before)+' message)');
+  const sent=JSON.parse(D.tgCalls[D.tgCalls.length-1].body);
+  assert(sent.chat_id==='99' && /<b>/.test(sent.text), 'telegram payload has chat id + HTML formatting');
+  const f=DESK.tgFormat('alert','BTC +5%','big move','market alert');
+  assert(f.indexOf('BTC +5%')!==-1 && f.indexOf('market alert')!==-1, 'tgFormat builds a titled message');
+  let threw=null;
+  state.tg.token='';
+  try{ await DESK.tgSend('x'); }catch(e){ threw=e.message; }
+  assert(!!threw && /bot token/.test(threw), 'tgSend refuses without a token');
+  state.tg.token='123:ABC';
+  const before2=D.tgCalls.length;
+  state.tg.events.alert=false;
+  DESK.state.alerts.length=0;
+  DESK.MARKET.q.BTC.chg=9.5;   /* trip the +/-4% alert */
+  DESK.detectAlerts();
+  await flush(4);
+  assert(D.tgCalls.length===before2, 'alerts respect the per-event Telegram switch');
+  state.tg.events.alert=true;
+  assert(state.alerts.length>0, 'alert fired for the 9.5% move');
+
+  /* ---- autonomous loop ---- */
+  state.loop={on:true,every:60,n:0,t:0};
+  const tasksBefore=state.tasks.length;
+  DESK.loopTick(61);
+  assert(state.tasks.length===tasksBefore+1, 'auto-loop filed a new task');
+  const lt=state.tasks[0];
+  assert(DESK.LOOP_QUEUE.indexOf(lt.title)!==-1, 'loop task comes from the research queue');
+  assert(lt.status==='working' && !!lt.assignedTo, 'loop task was routed to a desk');
+  assert(state.loop.n===1, 'loop counter advanced');
+  const n2=state.tasks.filter(t=>t.status==='working').length;
+  DESK.loopTick(61);
+  const n3=state.tasks.filter(t=>t.status==='working').length;
+  assert(!(n2<2&&n3>n2), 'loop never piles up more than 2 working tasks');
+  state.loop.on=false;
+
+  /* ---- faster responses ---- */
+  const A0=state.agents.marketintel;
+  state.fast=true;
+  const fastSecs=DESK.rate.workSecs(A0);
+  state.fast=false;
+  const slowSecs=DESK.rate.workSecs(A0);
+  assert(fastSecs<slowSecs, 'fast mode shortens the work animation ('+fastSecs.toFixed(1)+'s vs '+slowSecs.toFixed(1)+'s)');
+  state.fast=true;
+  state.llm.keys={deepseek:'',claude:'',openai:''}; DESK.applyLLM();
+  const q6=DESK.bossQuery('check the tape overlap test');
+  assert(!!q6.prefetch, 'desk starts answering at assignment (LLM latency overlaps the animation)');
+  D.fireTimer(q6.timer);
+  await flush(6);
+  assert(q6.status==='done' && !!q6.reply, 'prefetched answer still completes normally');
+
+  /* ---- answer cache ---- */
+  state.cache={};
+  const q7=DESK.bossQuery('cache probe question about breadth');
+  D.fireTimer(q7.timer); await flush(6);
+  const first=q7.reply;
+  const q8=DESK.bossQuery('cache probe question about breadth');
+  D.fireTimer(q8.timer); await flush(6);
+  assert(!!q8.reply && q8.reply.indexOf('cached answer')!==-1, 'identical question replays from cache instantly');
+  assert(state.cache && Object.keys(state.cache).length>0, 'cache populated');
+  assert(first.indexOf('cached answer')===-1, 'first answer is not marked cached');
+
+  /* ---- free tier exhausted -> the desk falls back to its own live-data answer ---- */
+  state.cache={};
+  state.llm.keys={deepseek:'',claude:'',openai:''};
+  state.llm.provider='free'; DESK.applyLLM();
+  D.flags.pollinationsBudget=true;
+  const q9=DESK.bossQuery('budget exhausted probe on breadth');
+  D.fireTimer(q9.timer);
+  await flush(6);
+  D.flags.pollinationsBudget=false;
+  assert(q9.status==='done' && !!q9.reply, 'desk still answers when the free tier is out of budget');
+  assert(q9.reply.indexOf('reached its budget')===-1, 'quota notice never reaches the user');
+  assert(/LIVE DATA|SCORE/.test(q9.reply), 'fallback answer is the live-data desk read');
+
   /* frame() with price hover + busy dots runs clean */
   state.priceHover={id:'marketintel',sym:'BTC',price:'77,839.00',chg:'+1.35%',until:Date.now()+99999};
   DESK.units.marketintel.busy=true; DESK.units.marketintel.mode='work';

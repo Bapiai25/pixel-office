@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Build the production bundle in dist/ from the source apps.
+
+Injects: production <meta> (description, OG/Twitter, theme-color, favicon),
+the footer disclaimer link, plus terms.html / robots.txt / _headers.
+The app code itself is copied verbatim — no bundling, no minification.
+
+Usage:  python3 tools/build_dist.py
+Then:   node tools/run-office.js dist/index.html      # verify the built bundle
+        python3 tools/netlify_deploy.py --site pixel-office-live
+"""
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DIST = os.path.join(ROOT, "dist")
+
+FAVICON = ("data:image/svg+xml,"
+           "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E"
+           "%3Crect width='16' height='16' fill='%230b1019'/%3E"
+           "%3Crect x='3' y='2' width='10' height='6' fill='%23f2c14e'/%3E"
+           "%3Crect x='4' y='8' width='8' height='6' fill='%233ad0a0'/%3E"
+           "%3Crect x='6' y='4' width='2' height='2' fill='%230b1019'/%3E"
+           "%3Crect x='9' y='4' width='2' height='2' fill='%230b1019'/%3E%3C/svg%3E")
+
+
+def meta(title, desc):
+    return f'''<meta name="description" content="{desc}">
+<meta name="theme-color" content="#0b1019">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pixel Office">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta property="og:image" content="og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta name="twitter:image" content="og.png">
+<link rel="icon" href="{FAVICON}">
+<link rel="apple-touch-icon" href="og.png">'''
+
+
+def build(src, out, title, desc, footers):
+    path = os.path.join(ROOT, src)
+    s = open(path, encoding="utf-8").read()
+    assert "<title>" in s, src
+    s = s.replace("<title>", meta(title, desc) + "\n<title>", 1)
+    for old, new in footers:
+        if old in s:
+            s = s.replace(old, new, 1)
+        else:
+            print(f"  ! footer anchor missing in {src}")
+    open(os.path.join(DIST, out), "w", encoding="utf-8").write(s)
+    print(f"  wrote dist/{out} ({len(s)//1024} KB)")
+
+
+DISCLAIMER = ('\n    <span>RESEARCH, NOT FINANCIAL ADVICE &middot; '
+              '<a href="terms.html" style="color:var(--amber)">TERMS &amp; DISCLAIMER</a>'
+              ' &middot; market data may be delayed or unavailable</span>')
+
+TERMS = None  # loaded from dist/terms.html if present, otherwise regenerated below
+
+
+def main():
+    os.makedirs(DIST, exist_ok=True)
+
+    build("pixel-office.html", "index.html",
+          "Pixel Office — Digital Asset Research Floor",
+          "A pixel-art crypto research floor where 21 AI analyst desks answer your market questions. "
+          "Live prices from CoinGecko, Binance and Coinbase; free keyless data; bring your own DeepSeek, "
+          "Claude or ChatGPT key. Telegram updates and an autonomous research loop. Research, not financial advice.",
+          [('<span>HOUSE RULES: no guarantees &middot; no hype &middot; separate FACT / DATA / INTERPRETATION / SPECULATION</span>',
+            '<span>HOUSE RULES: no guarantees &middot; no hype &middot; separate FACT / DATA / INTERPRETATION / SPECULATION</span>' + DISCLAIMER)])
+
+    build("pixel-play-space.html", "play.html",
+          "Pixel Play Space — a little world that grows",
+          "A cozy pixel-art hangout where characters with needs, moods and hobbies look after themselves. "
+          "No jobs, no targets — just a room that grows.",
+          [('<span>LIVE PRICES ON THE WALL BOARD ARE REAL FEED DATA &middot; anything the feed lacks is left blank, never invented</span>',
+            '<span>LIVE PRICES ON THE WALL BOARD ARE REAL FEED DATA &middot; anything the feed lacks is left blank, never invented</span>'
+            '\n    <span>RESEARCH, NOT FINANCIAL ADVICE &middot; '
+            '<a href="terms.html" style="color:var(--amber)">TERMS &amp; DISCLAIMER</a></span>')])
+
+    robots = os.path.join(DIST, "robots.txt")
+    if not os.path.exists(robots):
+        open(robots, "w").write("User-agent: *\nAllow: /\n")
+        print("  wrote dist/robots.txt")
+
+    headers = os.path.join(DIST, "_headers")
+    if not os.path.exists(headers):
+        open(headers, "w").write("""/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+""")
+        print("  wrote dist/_headers")
+
+    missing = [f for f in ("terms.html", "og.png") if not os.path.exists(os.path.join(DIST, f))]
+    if missing:
+        print(f"  note: dist/{', dist/'.join(missing)} not regenerated by this script (kept as-is)")
+    print("bundle ready:", ", ".join(sorted(os.listdir(DIST))))
+
+
+if __name__ == "__main__":
+    main()

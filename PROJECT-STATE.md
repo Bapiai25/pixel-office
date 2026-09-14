@@ -19,7 +19,54 @@
 
 Host: **Netlify** (free plan, account `bapiai25`, site `pixel-office-live`).
 Verified live: all routes 200, security headers applied, and the downloaded production
-HTML passes the full suite (**85/85**).
+HTML passes the full suite (**105/105**).
+
+### New in this round (production customisations)
+
+**Telegram bot updates** — desks push answers, market alerts and the daily digest straight to
+your chat. The Bot API is CORS-open, so the browser talks to it directly; your token stays in
+your own browser. Set it up in the app: **⚙ AI / API → TELEGRAM BOT** (token + chat id + which
+events to send + TEST TELEGRAM). Get a token from **@BotFather**, then send your bot one message.
+
+**Autonomous work loop** — the header **⟳ AUTO-LOOP** button turns the floor self-directed: every
+N seconds (default 120, set in ⚙ settings) a desk picks the next question from a research rotation,
+walks to its seat, answers, and posts to the bulletin + Telegram. Alerts wake the loop early, and
+it never piles up more than two working desks. The **LOOP** chip counts down to the next run.
+
+**Faster responses** — three changes:
+1. *Speculative execution*: a desk starts answering the moment the task is assigned, so LLM
+   latency overlaps the work animation instead of stacking on top of it (roughly halves wait time).
+2. *Fast mode* (default on): the work animation is 45% shorter. Switch to CINEMATIC in settings.
+3. *Answer cache*: an identical question on the same desk, provider and tape replays instantly,
+   labelled "(cached answer from Ns ago — the tape has not moved since)". 2-minute window.
+
+**Background worker (runs with the browser closed)** — `tools/office_worker.py` is the always-on
+version of the loop. It pulls the same live data, rotates desks, asks an LLM if one is reachable,
+**falls back to a local data-grounded desk answer when the free tier is out of budget**, and pushes
+to Telegram. Every cycle is appended to `worker-log.jsonl` (audit trail + future training data).
+
+```bash
+python3 tools/office_worker.py --check        # validate config + live data + telegram test
+python3 tools/office_worker.py --once --dry-run
+python3 tools/office_worker.py                # run forever (Ctrl+C stops)
+```
+
+Config lives in `worker-config.json` (created on first run): telegram token/chat, LLM provider +
+key, interval, symbols, and the desk rotation. Point `llm.provider` at `deepseek`/`openai`/`claude`
+with a key for richer answers, or leave it on `pollinations` (keyless).
+
+> **Free-tier reality check:** the keyless Pollinations tier ran out of budget on this network during
+> testing and answered HTTP 200 with a quota notice. Both the app and the worker now detect that and
+> fall back to the local live-data desk answer, so users always get a grounded answer. For heavy
+> production use, run with your own key (DeepSeek is the cheapest of the three).
+
+Rebuild + redeploy after any edit:
+
+```bash
+python3 tools/build_dist.py                          # rebuild dist/
+node tools/run-office.js dist/index.html             # verify the bundle
+python3 tools/netlify_deploy.py --site pixel-office-live
+```
 
 ### Redeploy after any edit
 
@@ -71,7 +118,9 @@ answer your questions about digital assets.
 | `dist/index.html` | Production build of the office (meta tags, favicon, disclaimer footer). |
 | `dist/terms.html` | Terms / disclaimer / privacy page (linked from both apps). |
 | `dist/og.png` | 1200×630 social preview image, generated from the floor render. |
-| `tools/` | Test + render tooling (see below). |
+| `tools/` | Test + render tooling + deploy scripts + the background worker. |
+| `worker-config.json` | Worker settings (telegram token, LLM key, interval, rotation). |
+| `worker-log.jsonl` | Every autonomous cycle the worker has run (audit + training data). |
 | `previews/` | Raw BMP renders; PNG copies in `office-room-preview.png`, `office-cast-preview.png`. |
 | `.git` | Repo initialised, everything committed (`Pixel Office: crypto research floor + play space…`). |
 
@@ -98,8 +147,9 @@ Background servers that were running during the session: `:8080` (apps), `:8090`
 
 ```bash
 cd "/Users/ray/Documents/AI work/deepseek"
-node tools/run-office.js pixel-office.html     # expect: 85 passed, 0 failed
+node tools/run-office.js pixel-office.html     # expect: 105 passed, 0 failed
 node tools/run-office.js dist/index.html       # same suite against the built bundle
+python3 tools/office_worker.py --once --dry-run # one autonomous research cycle (no sends)
 node tools/run-play.js pixel-play-space.html   # expect: 23 passed, 0 failed
 
 # syntax gate for any of the HTML files
@@ -148,7 +198,9 @@ image — that's how the character previews are produced and how visual changes 
 
 ## Open items / next time
 
-1. **Custom domain** — buy one and attach it in the Cloudflare dashboard (HTTPS is automatic).
+1. **Turn on Telegram** — paste the BotFather token + chat id into ⚙ AI / API → TELEGRAM BOT
+   (browser pushes) and/or `worker-config.json` (always-on worker). Nothing else pending.
+2. **Custom domain** — buy one and attach it in the Cloudflare dashboard (HTTPS is automatic).
 3. **Monetization** — add a Stripe Payment Link or LemonSqueezy checkout to the header when
    you're ready; no backend needed.
 4. **Rate limits** — public market APIs are fine for personal/small traffic. If it grows,
@@ -172,4 +224,6 @@ image — that's how the character previews are produced and how visual changes 
 10. Per-character looks (22 distinct appearances)
 11. Sprite art rebuilt at 40×48 with reference anatomy, then room rescaled to 85×78 cells
 12. Production bundle: meta/OG/favicon, terms + disclaimer, security headers, deploy notes
-13. **Deployed live to Netlify** → https://pixel-office-live.netlify.app (verified 85/85 in production)
+13. **Deployed live to Netlify** → https://pixel-office-live.netlify.app (verified in production)
+14. Telegram bot updates + autonomous AUTO-LOOP + fast/cached answers + background worker
+    (`tools/office_worker.py`), soft-error guard for exhausted free tiers, redeployed (105/105 checks)

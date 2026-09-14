@@ -104,7 +104,7 @@ const document={
   dispatchKey(k){ (document._ev.keydown||[]).forEach(f=>f({key:k,target:{tagName:'DIV'},preventDefault(){}})); }
 };
 
-const IDS=['an','ava','bars','bBulletinClear','bData','bDay','bHire','bNewTask','bNight','bReport','bReset','bRun','bScan','bSend','bSettings','bSfx','bTour','bulletinList','cCash','cClock','cCoins','cDay','cFeed','cFree','cmdInput','cmdSuggest',
+const IDS=['an','ava','bars','bBulletinClear','bData','bDay','bHire','bNewTask','bNight','bReport','bReset','bRun','bScan','bSend','bLoop','bSettings','bSfx','bTour','bulletinList','cCash','cClock','cCoins','cDay','cFeed','cFree','cLoop','cTg','cmdInput','cmdSuggest',
   'cMkt','crewList','divName','hdrSub','law','log','mand','modalRoot','nm','office','ov','payroll','railText',
   'rl','scan','shop','tag','taskBoard','tickerBadge','toasts','viewBody','viewTitle'];
 IDS.forEach(id=>{ const el=makeEl(id==='office'||id==='ava'?'canvas':'div'); byId[id]=el; docEls.push(el); });
@@ -147,8 +147,16 @@ const CG_ROWS={
     sparkline_in_7d:{price:[138,139,140,141,142.3,141,140.5,141.8,142.3]}}
 };
 
-async function fakeFetch(url){
+const tgCalls=[];
+const flags={pollinationsBudget:false};
+async function fakeFetch(url,opts){
   url=String(url);
+  if(url.indexOf('api.telegram.org')!==-1){
+    tgCalls.push({url,body:opts&&opts.body?String(opts.body):''});
+    if(url.indexOf('BADTOKEN')!==-1)
+      return {ok:false,status:401,json:async()=>({ok:false,error_code:401,description:'Unauthorized'})};
+    return {ok:true,status:200,json:async()=>({ok:true,result:{message_id:tgCalls.length}})};
+  }
   if(url.indexOf('alternative.me')!==-1)
     return {ok:true,status:200,json:async()=>({data:[{value:'57',value_classification:'Greed',timestamp:'1789344000'}]})};
   if(url.indexOf('mempool.space')!==-1)
@@ -157,8 +165,11 @@ async function fakeFetch(url){
     return {ok:true,status:200,json:async()=>({data:[
       {id:'eth_0xabc',attributes:{name:'SHIB/WETH',base_token_price_usd:'0.00002',price_change_percentage:{h24:'12.5'},volume_usd:{h24:'5000000'}}},
       {id:'sol_0xdef',attributes:{name:'BONK/SOL',base_token_price_usd:'0.00000003',price_change_percentage:{h24:'8.2'},volume_usd:{h24:'3000000'}}}]})};
-  if(url.indexOf('pollinations')!==-1)
+  if(url.indexOf('pollinations')!==-1){
+    if(flags.pollinationsBudget)     /* simulate an exhausted free tier */
+      return {ok:true,status:200,json:async()=>({choices:[{message:{content:'The API key used for this request has reached its budget. Please raise the key budget, then try again.'}}]})};
     return {ok:true,status:200,json:async()=>({choices:[{message:{content:'FREE-LLM: trends read from live context — 2/3 tracked assets up, top pools SHIB/WETH, BONK/SOL.'}}]})};
+  }
   if(url.indexOf('coingecko')!==-1){
     const ids=(url.match(/ids=([^&]+)/)||[])[1]||'bitcoin';
     const list=ids.split(',').map(id=>CG_ROWS[id]).filter(Boolean);
@@ -173,5 +184,5 @@ async function fakeFetch(url){
   return {ok:false,status:404,json:async()=>[]};
 }
 
-module.exports={ document, byId, docEls, makeEl, windowObj, fakeSetInterval, fakeClearInterval,
+module.exports={ tgCalls, flags, document, byId, docEls, makeEl, windowObj, fakeSetInterval, fakeClearInterval,
   fakeSetTimeout, fakeClearTimeout, fakeRaf, pump, fakeFetch, fireTimer, mem };

@@ -228,6 +228,7 @@
       <button class="retro" id="bSfx">SFX : OFF</button>
       <button class="retro" id="bSettings">&#9881; AI / API</button>
       <button class="retro" id="bTour">AUTO-TOUR</button>
+      <button class="retro" id="bLoop">&#8635; AUTO-LOOP</button>
       <button class="retro" id="bReport">&#9656; DAILY REPORT</button>
       <button class="retro run" id="bRun">&#9654; RUN FLOOR</button>
     </div>
@@ -241,6 +242,8 @@
     <span class="chip" id="cMkt">MARKET: —</span>
     <span class="chip" id="cClock">LIVE TIME —:—:—</span>
     <span class="chip" id="cFree">FREE APIS: —</span>
+    <span class="chip" id="cLoop">LOOP: OFF</span>
+    <span class="chip" id="cTg">TG: OFF</span>
     <button class="retro" id="bData">DATA</button>
     <button class="retro" id="bHire">+ HIRE</button>
     <button class="retro" id="bReset">RESET</button>
@@ -473,7 +476,9 @@ const state={
   lastReport:null,lastCommittee:null,cgKey:'',autoFeed:true,
   taskSeq:1,tradeSeq:1,alertSeq:1,understaffed:false,nudged:false,jukebox:false,
   llm:{provider:'free',model:'openai',medium:'both',keys:{deepseek:'',claude:'',openai:''}},
-  bulletin:[],priceHover:null,tour:null,tourIdx:0,officeMemory:[],training:[]
+  bulletin:[],priceHover:null,tour:null,tourIdx:0,officeMemory:[],training:[],
+  tg:{token:'',chat:'',on:true,events:{answer:true,alert:true,digest:true},last:null},
+  loop:{on:false,every:120,n:0,t:0},fast:true,cache:{}
 };
 const MARKET={q:{},hist:{},source:'—',status:'idle',error:'',updated:0,failures:0,nextRetry:0,
   fng:null,fees:null,trending:null,free:{online:[],offline:[]}};
@@ -1146,7 +1151,14 @@ async function callFree(a,s,u){
     body:JSON.stringify({model:'openai',messages:[{role:'system',content:s},{role:'user',content:u}]})});
   if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error('Free LLM '+res.status+': '+t.slice(0,120)); }
   const d=await res.json();
-  return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'(empty response)';
+  const out=(d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
+  /* free tiers can answer 200 with a quota/budget notice — treat that as a failure
+     so the desk falls back to its own live-data answer instead of showing the notice */
+  const low=String(out).toLowerCase();
+  const bad=['reached its budget','raise the key budget','rate limit','too many requests',
+    'unauthorized','invalid api key','quota','payment required','try again later'];
+  if(out.trim().length<40||bad.some(m=>low.indexOf(m)!==-1)) throw new Error('free tier notice, not an answer');
+  return out;
 }
 async function autoConnect(manual){
   const jobs=[['Fear & Greed',()=>fetchFearGreed().then(d=>{MARKET.fng=d;})],
@@ -1344,6 +1356,8 @@ function pushAlert(kind,title,body){
   toast('ALERT: '+title,kind==='bull'?'good':'bad');
   SFX.alert(); addLog('!!','ALERT · '+title,'alert');
   if(state.view==='alerts') renderAlerts();
+  tgPush('alert', tgFormat('alert', title, body, 'market alert'));
+  if(state.loop.on) state.loop.t=state.loop.every;      /* alerts wake the loop early */
   save();
 }
 function detectAlerts(){
@@ -1555,7 +1569,7 @@ function detectKind(title){
   });
   return best;
 }
-const workSecs=a=>{ const base=(a.tier<=2)?6:5; return has('coffee')?base*.8:base; };
+const workSecs=a=>{ const base=(a.tier<=2)?6:5; const s=has('coffee')?base*.8:base; return state.fast?s*0.45:s; };
 const coinsFor=a=>Math.round(((a.tier<=2)?12:9)*(has('chairs')?1.5:1));
 const cashFor=t=>Math.round(((t.live?34:20)+(t.live&&MARKET.status==='live'?6:0))*(has('chairs')?1.5:1));
 function createTask(title,notes,live){
@@ -1581,6 +1595,9 @@ function assignTask(task,who){
   say(who,'On it: '+short(task.title,20),2400);
   SFX.assign(); toast(A.name+' picked up '+task.id,'good');
   renderTasks(); renderCrew();
+  /* speculative execution: the desk starts answering now, so the LLM latency
+     overlaps the work animation instead of being added to it */
+  if(!task.prefetch) task.prefetch=answer(task,who);
   task.timer=setTimeout(()=>finishTask(task),workSecs(A)*1000);
   save(); checkLoad();
 }
@@ -1594,7 +1611,8 @@ function finishTask(task){
   SFX.done(); SFX.coin();
   addLog('OK',A.name+' finished '+task.id+' (+'+money(cash)+')','task');
   save(); renderChips(); renderShop(); renderTasks(); renderCrew(); renderDossier();
-  answer(task,id).then(reply=>{
+  (task.prefetch||answer(task,id)).then(reply=>{
+    task.prefetch=null;
     task.reply=reply;
     const AL=agent(id); if(AL) AL.stats.tasks++;
     recordTraining(task,id,reply);
@@ -1623,6 +1641,16 @@ async function answer(task,id){
   if(task.live) await ensureFresh();
   const kind=task.kind||detectKind(task.title);
   task.kind=kind;
+  /* cache: same question, same tape -> instant replay (2 min, labelled) */
+  const ck=[kind,id,A.provider||'free',A.model||'default',
+    String(task.title).toLowerCase().replace(/\s+/g,' ').trim(),
+    (MARKET.q.BTC?Math.round(MARKET.q.BTC.price):0)].join('|');
+  const hit=state.cache[ck];
+  if(hit&&Date.now()-hit.at<120000){
+    const msg=hit.text+'\n\n(cached answer from '+ago(hit.at)+' — the tape has not moved since)';
+    A.history.push({role:'agent',content:msg});
+    return msg;
+  }
   A.history.push({role:'user',content:task.title+(task.notes?(' ('+task.notes+')'):'')});
   if(!A.apiKey){
     let msg;
@@ -1631,6 +1659,7 @@ async function answer(task,id){
       catch(e){ msg=offlineAnswer(A,kind,task)+'\n\n(FREE LLM offline — '+e.message+')'; }
     }else msg=offlineAnswer(A,kind,task);
     A.history.push({role:'agent',content:msg});
+    state.cache[ck]={at:Date.now(),text:msg};
     if(state.deskTab==='log') renderDossier();
     return msg;
   }
@@ -1638,6 +1667,7 @@ async function answer(task,id){
   try{
     const reply=await callProvider(A,deskContext(A,kind),task.title+(task.notes?'\n\nContext: '+task.notes:''));
     A.history.push({role:'agent',content:reply});
+    state.cache[ck]={at:Date.now(),text:reply};
     return reply;
   }finally{ A.thinking=false; if(state.deskTab==='log') renderDossier(); }
 }
@@ -2123,7 +2153,18 @@ function applyLLM(){
 function collectCfg(){
   return {provider:$('llmProvider').value,model:($('llmModel').value||'').trim(),
     medium:$('llmMedium').value,
-    keys:{deepseek:$('llmKey_deepseek').value.trim(),claude:$('llmKey_claude').value.trim(),openai:$('llmKey_openai').value.trim(),free:''}};
+    keys:{deepseek:$('llmKey_deepseek').value.trim(),claude:$('llmKey_claude').value.trim(),openai:$('llmKey_openai').value.trim(),free:''},
+    tg:{token:$('tgToken').value.trim(),chat:$('tgChat').value.trim(),
+      on:$('tgOn').value==='on',
+      events:{answer:$('tgE_answer').value==='on',alert:$('tgE_alert').value==='on',digest:$('tgE_digest').value==='on'}},
+    fast:$('fastMode').value==='on', loopEvery:Math.max(30,Math.min(3600,Number($('loopEvery').value)||120))};
+}
+function storeCfg(cfg){
+  state.llm={provider:cfg.provider,model:cfg.model,medium:cfg.medium,keys:cfg.keys};
+  state.tg=Object.assign({last:state.tg.last},cfg.tg);
+  state.fast=cfg.fast; state.loop.every=cfg.loopEvery;
+  Object.keys(state.agents).forEach(id=>{ state.agents[id].apiKey=state.llm.keys[state.agents[id].provider]||''; });
+  save(); renderChips();
 }
 function openSettings(){
   const m=modalShell('&#9881; AI / API SETTINGS','Which LLM answers desk questions (the mode), where the answer goes (the medium), and the keys. Keys stay in this browser and go straight to the provider — no server in between.');
@@ -2153,6 +2194,33 @@ function openSettings(){
   body.appendChild(row('MODE (provider)',selP));
   body.appendChild(row('MODEL',selM)); body.appendChild(dl);
   body.appendChild(row('MEDIUM (where answers go)',selMed));
+  /* --- telegram bot --- */
+  const tgTok=document.createElement('input'); tgTok.type='password'; tgTok.id='tgToken';
+  tgTok.placeholder='123456:ABC-DEF… (@BotFather gives you this)'; tgTok.value=state.tg.token||'';
+  const tgChat=document.createElement('input'); tgChat.type='text'; tgChat.id='tgChat';
+  tgChat.placeholder='chat id, e.g. 123456789 (or @yourchannel)'; tgChat.value=state.tg.chat||'';
+  const mkSel=(id,opts,val)=>{ const sel=document.createElement('select'); sel.id=id;
+    opts.forEach(o=>{ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; sel.appendChild(op); });
+    sel.value=val; return sel; };
+  const YN=[['on','ON'],['off','OFF']];
+  const tgOn=mkSel('tgOn',YN,state.tg.on?'on':'off');
+  const tgEa=mkSel('tgE_answer',YN,state.tg.events.answer?'on':'off');
+  const tgEl=mkSel('tgE_alert',YN,state.tg.events.alert?'on':'off');
+  const tgEd=mkSel('tgE_digest',YN,state.tg.events.digest?'on':'off');
+  const fast=mkSel('fastMode',[['on','FAST — short work animation (recommended)'],['off','CINEMATIC — full work animation']],state.fast?'on':'off');
+  const lpEv=document.createElement('input'); lpEv.type='text'; lpEv.id='loopEvery';
+  lpEv.value=String(state.loop.every); lpEv.placeholder='seconds between auto-loop runs (default 120)';
+  const sep=document.createElement('div'); sep.className='note'; sep.style.margin='14px 0 8px';
+  sep.innerHTML='<b style="color:var(--amber)">&#9656; TELEGRAM BOT</b> — create a bot with @BotFather, paste the token, then message your bot once so it can reply. Updates are sent straight from this browser to Telegram.';
+  body.appendChild(sep);
+  body.appendChild(row('Bot token',tgTok));
+  body.appendChild(row('Chat id',tgChat));
+  body.appendChild(row('Updates enabled',tgOn));
+  body.appendChild(row('Send desk answers',tgEa));
+  body.appendChild(row('Send market alerts',tgEl));
+  body.appendChild(row('Send daily digest',tgEd));
+  body.appendChild(row('Response speed',fast));
+  body.appendChild(row('Auto-loop every (s)',lpEv));
   body.appendChild(row('DeepSeek key',keys.deepseek));
   body.appendChild(row('Claude key',keys.claude));
   body.appendChild(row('ChatGPT key',keys.openai));
@@ -2160,6 +2228,15 @@ function openSettings(){
   status.textContent='Prices always come from the live CoinGecko/Binance/Coinbase feed — the LLM only writes the desk answer around them. Claude is called with its direct-browser-access header. Every answer, your GOOD/FLAG rating and paper-trade P&L are captured below and can be exported as a fine-tuning JSONL dataset.';
   body.appendChild(status);
   const acts=document.createElement('div'); acts.className='acts';
+  const tgT=document.createElement('button'); tgT.className='retro'; tgT.id='tgTest'; tgT.textContent='TEST TELEGRAM';
+  tgT.addEventListener('click',async()=>{
+    storeCfg(collectCfg());
+    if(!tgReady()){ status.textContent='Telegram: add the bot token and chat id first.'; return; }
+    tgT.disabled=true; tgT.textContent='SENDING…';
+    try{ await tgTest(); status.textContent='Telegram: message delivered — check your chat.'; }
+    catch(e){ status.textContent='Telegram failed — '+e.message; }
+    tgT.disabled=false; tgT.textContent='TEST TELEGRAM'; renderChips();
+  });
   const t=document.createElement('button'); t.className='retro'; t.id='llmTest'; t.textContent='TEST CONNECTION';
   t.addEventListener('click',async()=>{
     const cfg=collectCfg();
@@ -2174,7 +2251,7 @@ function openSettings(){
   });
   const ap=document.createElement('button'); ap.className='retro run'; ap.id='llmApply'; ap.textContent='APPLY TO ALL DESKS';
   ap.addEventListener('click',()=>{
-    state.llm=collectCfg(); save();
+    const cfg=collectCfg(); storeCfg(cfg);
     Object.keys(state.agents).forEach(id=>{
       state.agents[id].provider=state.llm.provider; state.agents[id].model=state.llm.model;
       state.agents[id].apiKey=state.llm.keys[state.llm.provider]||'';
@@ -2183,12 +2260,12 @@ function openSettings(){
     toast('Mode applied to all '+Object.keys(state.agents).length+' desks: '+llmLabel(state.llm.provider)+' — '+state.llm.medium,'good');
   });
   const dn=document.createElement('button'); dn.className='retro'; dn.id='llmDone'; dn.textContent='SAVE & CLOSE';
-  dn.addEventListener('click',()=>{ state.llm=collectCfg(); save(); applyLLM(); closeModal();
-    toast('AI settings saved','good'); });
+  dn.addEventListener('click',()=>{ storeCfg(collectCfg()); applyLLM(); closeModal();
+    toast('Settings saved · telegram '+(tgReady()?(state.tg.on?'on':'paused'):'not set')+' · '+(state.fast?'fast':'cinematic')+' answers','good'); });
   const exp=document.createElement('button'); exp.className='retro'; exp.id='llmExport';
   exp.textContent='EXPORT TRAINING DATA ('+state.training.length+')';
   exp.addEventListener('click',()=>{ exportTraining(); exp.textContent='EXPORT TRAINING DATA ('+state.training.length+')'; });
-  acts.appendChild(t); acts.appendChild(ap); acts.appendChild(exp); acts.appendChild(dn);
+  acts.appendChild(tgT); acts.appendChild(t); acts.appendChild(ap); acts.appendChild(exp); acts.appendChild(dn);
   body.appendChild(acts);
 }
 /* ---------- bulletin board ---------- */
@@ -2229,6 +2306,8 @@ function postBulletin(task,id,reply){
   state.bulletin.unshift({at:Date.now(),task:task.id,from:id,title:task.title,kind:task.kind||'market',text:reply});
   if(state.bulletin.length>40) state.bulletin.length=40;
   save(); renderBulletin();
+  const A2=agent(id);
+  tgPush('answer', tgFormat('answer', task.title, reply, (A2?A2.name+' · ':'')+(task.kind||'').toUpperCase()+' desk'+(A2&&A2.provider==='free'?' · free LLM':'')));
   if(state.llm.medium==='bulletin') toast(agent(id).name+' answered — see the bulletin board','good');
 }
 function postCmdBulletin(title,text){ postBulletin({id:'CMD',title,kind:detectKind(title)},'orchestrator',text); }
@@ -2297,6 +2376,64 @@ function tourStep(){
   renderDossier();
 }
 
+/* ---------- autonomous work loop: the floor keeps researching by itself ---------- */
+const LOOP_QUEUE=[
+  'Scan the tape: what changed in the tracked set since the last run?',
+  'Rank the tracked symbols by 24h momentum and name the outlier.',
+  'Where is risk building in the majors right now?',
+  'What is the market regime and what is driving it?',
+  'Check the trending pools and flag anything that looks overheated.',
+  'Review the tracked set for anything breaking structure.',
+  'Summarise breadth: how many of the tracked symbols are up on the day?',
+  'What would invalidate the current market read?'
+];
+function loopTick(dt){
+  const L=state.loop;
+  if(!L.on) return;
+  L.t=(L.t||0)+dt;
+  if(L.t<L.every) return;
+  L.t=0;
+  if(state.tasks.filter(t=>t.status==='working').length>=2) return;   /* never pile up */
+  const q=LOOP_QUEUE[L.n%LOOP_QUEUE.length]; L.n++;
+  const low=q.toLowerCase();
+  let who=routeDesk(low,guessSymbol(q));
+  if(!agent(who)) who=bestMatch(q,state.roster)||'orchestrator';
+  const t=createTask(q,'AUTO-LOOP · self-directed research',true);
+  assignTask(t,who);
+  if(/trend|regime|breadth|mood|scan/.test(low)) t.kind='market';
+  const A=agent(who);
+  addLog('LO','Auto-loop: '+(A?A.name:who)+' picked up '+t.id,'loop');
+  toast('Auto-loop filed '+t.id+' with '+(A?A.name:who),'good');
+  tgPush('loop', tgFormat('loop','Auto-loop started '+t.id, q+'\n\nDesk: '+(A?A.name+' ('+A.role+')':who), 'self-directed'));
+  save(); renderChips();
+}
+
+/* ---------- telegram bot updates (browser -> Bot API, CORS verified) ---------- */
+function tgReady(){ return !!(state.tg.token&&state.tg.chat); }
+function tgEsc(t){ return String(t==null?'':t).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+function tgFormat(kind,title,body,who){
+  const icon={answer:'\u{1F4CA}',alert:'\u{1F6A8}',digest:'\u{1F5D3}',report:'\u{1F4C4}',loop:'\u{1F501}'}[kind]||'\u{1F4CC}';
+  return icon+' <b>'+tgEsc(title)+'</b>\n'+(who?('<i>'+tgEsc(who)+'</i>\n'):'')+'\n'+tgEsc(String(body||'').slice(0,3400));
+}
+async function tgSend(text){
+  if(!tgReady()) throw new Error('add your bot token and chat id first');
+  const r=await fetch('https://api.telegram.org/bot'+state.tg.token+'/sendMessage',{method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({chat_id:state.tg.chat,text,parse_mode:'HTML',disable_web_page_preview:true})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||d.ok===false) throw new Error(d.description||('HTTP '+r.status));
+  return d;
+}
+function tgPush(kind,text){
+  if(!state.tg.on||!tgReady()||!state.tg.events[kind]) return;
+  tgSend(text).then(()=>{ state.tg.last={at:Date.now(),ok:true,kind}; renderChips(); })
+    .catch(e=>{ state.tg.last={at:Date.now(),ok:false,kind,err:e.message}; toast('Telegram: '+e.message,'bad'); renderChips(); });
+}
+async function tgTest(){
+  const d=await tgSend(tgFormat('report','Pixel Office is connected','Live market updates, desk answers and alerts will arrive in this chat.','test message'));
+  return d;
+}
+
 /* ---------- self-learning: memory, feedback, outcome attribution ---------- */
 function learn(id,lesson){
   const A=agent(id); if(!A) return;
@@ -2332,6 +2469,7 @@ function officeDigest(){
   state.officeMemory.unshift(mem);
   if(state.officeMemory.length>6) state.officeMemory.length=6;
   postCmdBulletin('DAILY LEARNING DIGEST',mem.text);
+  tgPush('digest', tgFormat('digest','Daily digest · office day '+state.day, mem.text, state.roster.length+' desks'));
   save();
 }
 
@@ -2848,6 +2986,18 @@ function renderChips(){
     m.textContent=b?('BTC $'+fmtPrice(b.price)+' '+pct(b.chg)+' · '+regime()):'MARKET: —';
     m.className='chip'+(b?(b.chg>=0?' live':' bad'):'');
   }
+  const lp=$('cLoop');
+  if(lp){
+    lp.textContent=state.loop.on?('LOOP '+Math.max(0,Math.round(state.loop.every-(state.loop.t||0)))+'s · '+state.loop.n+' done'):'LOOP: OFF';
+    lp.className='chip'+(state.loop.on?' live':'');
+  }
+  const tg=$('cTg');
+  if(tg){
+    const ok=tgReady()&&state.tg.on;
+    tg.textContent='TG: '+(tgReady()?(state.tg.on?'ON':'PAUSED'):'NOT SET');
+    tg.className='chip'+(ok?' live':' warn');
+    tg.title=state.tg.last?('last '+(state.tg.last.ok?'sent':'failed')+' '+ago(state.tg.last.at)+(state.tg.last.err?(' — '+state.tg.last.err):'')):'no messages yet';
+  }
   const fr=$('cFree');
   if(fr){
     const n=MARKET.free.online.length, t=n+MARKET.free.offline.length;
@@ -3204,6 +3354,7 @@ function tick(dt){
   bossIdle();
   smallTalkTick(dt);
   robotTick(dt);
+  loopTick(dt);
   if((T%30)===0) renderChips();
   if((T%120)===0) refreshPlates();
 }
@@ -3301,6 +3452,10 @@ async function loadGame(){
     state.bulletin=Array.isArray(g.bulletin)?g.bulletin.slice(0,40):[];
     state.officeMemory=Array.isArray(g.officeMemory)?g.officeMemory.slice(0,6):[];
     state.training=(Array.isArray(g.training)?g.training:[]).slice(0,100);
+    state.tg=Object.assign({token:'',chat:'',on:true,events:{answer:true,alert:true,digest:true},last:null},g.tg||{});
+    state.tg.events=Object.assign({answer:true,alert:true,digest:true},state.tg.events||{});
+    state.loop=Object.assign({on:false,every:120,n:0,t:0},g.loop||{});
+    state.fast=g.fast!==false;
     const mm=g.mem||{};
     Object.keys(mm).forEach(id=>{ if(state.agents[id]){
       state.agents[id].lessons=Array.isArray(mm[id].lessons)?mm[id].lessons.slice(0,8):[];
@@ -3331,6 +3486,7 @@ function save(){
     tasks:state.tasks.map(t=>({id:t.id,title:t.title,notes:t.notes,live:t.live,kind:t.kind,status:t.status,
       assignedTo:t.assignedTo,reply:t.reply,error:!!t.error,createdAt:t.createdAt,startedAt:t.startedAt,doneAt:t.doneAt})),
     llm:state.llm,bulletin:state.bulletin.slice(0,40),
+    tg:state.tg,loop:{on:state.loop.on,every:state.loop.every,n:state.loop.n},fast:state.fast,
     officeMemory:state.officeMemory.slice(0,6),
     training:state.training.slice(0,100),
     mem:Object.fromEntries(Object.keys(state.agents).map(id=>[id,{lessons:(state.agents[id].lessons||[]).slice(0,8),
@@ -3365,6 +3521,13 @@ function wire(){
     save();
   });
   $('bSettings').addEventListener('click',openSettings);
+  $('bLoop').addEventListener('click',()=>{
+    state.loop.on=!state.loop.on; state.loop.t=0;
+    $('bLoop').classList.toggle('on',state.loop.on);
+    toast(state.loop.on?('Auto-loop on — a desk starts new research every '+state.loop.every+'s'):'Auto-loop off',state.loop.on?'good':'');
+    if(state.loop.on) loopTick(1e9);
+    renderChips(); save();
+  });
   $('bTour').addEventListener('click',()=>{
     if(state.tour){ clearInterval(state.tour); state.tour=null; }
     else { state.tour=setInterval(tourStep,3600); tourStep(); }
@@ -3500,7 +3663,7 @@ window.__DESK__={state,MARKET,units,ORG,BENCH,HOUSE_RULES,WEIGHTS,MISSING,RW,RH,
   fetchFearGreed,fetchMempoolFees,fetchTrendingPools,callFree,autoConnect,autoFreeMode,
   learn,rateAnswer,creditTrade,officeDigest,deskContext,
   recordTraining,rateRecord,tradeRecord,trainingJSONL,exportTraining,
-  LOOKS,mkAgent,
+  LOOKS,mkAgent,tgSend,tgPush,tgFormat,tgReady,tgTest,tgEsc,loopTick,LOOP_QUEUE,
   tagged,LLM_CFG,testLLM:null};
 </script>
 </body>
