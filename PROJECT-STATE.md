@@ -4,27 +4,45 @@
 
 ---
 
-## TL;DR — where we stopped
+## TL;DR — LIVE IN PRODUCTION
 
-The product is **finished and production-ready**, but **not yet published to the internet**.
-The one remaining step is your Cloudflare authorization (the browser approval timed out last time).
+**The site is deployed and public:**
 
-**Next action, exactly:**
+# https://pixel-office-live.netlify.app
+
+| Route | What |
+|---|---|
+| `/` | the crypto research office (main product) |
+| `/play.html` | the pixel play space |
+| `/terms.html` | terms / disclaimer / privacy |
+| `/og.png` | social preview image |
+
+Host: **Netlify** (free plan, account `bapiai25`, site `pixel-office-live`).
+Verified live: all routes 200, security headers applied, and the downloaded production
+HTML passes the full suite (**85/85**).
+
+### Redeploy after any edit
 
 ```bash
 cd "/Users/ray/Documents/AI work/deepseek"
-npx --yes wrangler@latest login          # opens browser → click "Allow"
-npx --yes wrangler@latest pages deploy dist --project-name pixel-office --branch main
+# 1. edit pixel-office.html (the source of truth)
+# 2. rebuild dist/  (the build step: production <meta>, favicon, disclaimer link,
+#    terms.html, robots.txt, _headers — see dist/DEPLOY.md for the exact script block)
+# 3. push it live:
+python3 tools/netlify_deploy.py --site pixel-office-live
 ```
 
-The second command prints the live URL (`https://pixel-office.pages.dev` unless taken).
-Tell me when you're back and I'll run both and verify the live site.
+`tools/netlify_deploy.py` reads the token that `netlify login` stored, zips `dist/`,
+uploads it through the Netlify REST API, waits for `state: ready` and prints the live URL.
+It retries on rate limits and falls back to another subdomain name if one is taken.
 
-*Alternatives if you'd rather not use Cloudflare:* drag `dist/` onto https://app.netlify.com/drop
-(no account needed to get a URL), or `npx vercel --prod dist`, or push to GitHub Pages
-(the repo already exists locally with everything committed).
+Auth token lives at `~/Library/Preferences/netlify/config.json` (Netlify CLI config).
+If it ever expires: `npx --yes netlify-cli@latest login`.
 
----
+> Note: API-created sites inherit **SSO visitor access** on this account, which makes every
+> page redirect to a Netlify login (401). It is switched off on this site; if a new site
+> shows a login wall, run:
+> `curl -X PATCH -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"sso_login":false}' https://api.netlify.com/api/v1/sites/$SITE_ID`
 
 ## What the product is
 
@@ -130,8 +148,7 @@ image — that's how the character previews are produced and how visual changes 
 
 ## Open items / next time
 
-1. **Publish** (the command block at the top) — then I'll verify the live URL.
-2. **Custom domain** — buy one and attach it in the Cloudflare dashboard (HTTPS is automatic).
+1. **Custom domain** — buy one and attach it in the Cloudflare dashboard (HTTPS is automatic).
 3. **Monetization** — add a Stripe Payment Link or LemonSqueezy checkout to the header when
    you're ready; no backend needed.
 4. **Rate limits** — public market APIs are fine for personal/small traffic. If it grows,
@@ -155,3 +172,4 @@ image — that's how the character previews are produced and how visual changes 
 10. Per-character looks (22 distinct appearances)
 11. Sprite art rebuilt at 40×48 with reference anatomy, then room rescaled to 85×78 cells
 12. Production bundle: meta/OG/favicon, terms + disclaimer, security headers, deploy notes
+13. **Deployed live to Netlify** → https://pixel-office-live.netlify.app (verified 85/85 in production)
