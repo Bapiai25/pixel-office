@@ -1,0 +1,1938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HERMES PIXEL OFFICE — live agent visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#e6f1e8; --dim:#8fa3a8; --green:#3ad0a0; --amber:#f2c14e; --red:#e05c4b;
+    --blue:#7fd3f0; --purple:#a06cd5; --pink:#f27ca8;
+    --panel:#111726; --panel2:#0b1019; --line:#28324a;
+  }
+  *{box-sizing:border-box;image-rendering:pixelated;}
+  html,body{margin:0;padding:0;background:#080c14;color:var(--ink);
+    font-family:'Press Start 2P',monospace;-webkit-font-smoothing:none;}
+  button{font-family:inherit;cursor:pointer;}
+  .retro{font-size:7px;color:var(--ink);background:#1b2334;border:2px solid var(--line);
+    padding:7px;letter-spacing:1px;line-height:1.6;}
+  .retro:hover{background:#25304a;border-color:var(--green);color:var(--green);}
+  .retro.on{color:var(--amber);border-color:var(--amber);}
+  .retro.run{background:#132a22;border-color:var(--green);color:var(--green);}
+  .retro.run:hover{background:#1c4433;}
+  .retro.warn{border-color:#5a4a20;color:var(--amber);}
+  .retro:disabled{opacity:.4;cursor:not-allowed;}
+  input[type=text],input[type=number],textarea,select{
+    font-family:'VT323',monospace;font-size:16px;background:#0d1320;color:var(--ink);
+    border:2px solid var(--line);padding:6px 7px;width:100%;}
+  textarea{resize:vertical;}
+  #page{max-width:1380px;margin:0 auto;padding:10px;}
+
+  .hdr{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    border:2px solid var(--line);border-bottom:none;background:var(--panel2);padding:9px 10px 8px;}
+  .hdr h1{margin:0;font-size:13px;letter-spacing:1px;color:var(--green);line-height:1.5;}
+  .hdr .sub{font-size:7px;color:var(--dim);margin-top:7px;line-height:1.8;}
+  .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+
+  .chiprow{display:flex;gap:6px;flex-wrap:wrap;border:2px solid var(--line);border-top:none;
+    background:var(--panel2);padding:8px 10px;align-items:center;}
+  .chip{font-size:7px;border:2px solid var(--line);background:var(--panel);padding:6px 7px;line-height:1.6;}
+  .chip.live{color:#06240f;background:var(--green);}
+  .chip.sim{color:#2a1f04;background:var(--amber);}
+  .chip.bad{color:#fff;background:var(--red);}
+
+  .stage{position:relative;border:2px solid var(--line);background:#0b1019;line-height:0;overflow:hidden;}
+  canvas#office{display:block;width:100%;height:auto;}
+  .ov{position:absolute;inset:0;line-height:1.4;pointer-events:none;}
+  .tile{position:absolute;cursor:pointer;pointer-events:auto;}
+  .tile .plate{position:absolute;left:2%;right:2%;top:68%;height:28%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none;}
+  .tile .plate b{font-size:10px;font-weight:normal;color:#dff3e6;text-shadow:1px 1px 0 #000;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tile .plate i{font-style:normal;font-size:6px;color:var(--dim);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tile:hover .plate{background:rgba(58,208,160,.14);}
+  .tile.on .plate b{color:var(--amber);}
+  .tile.on:after{content:'';position:absolute;left:1%;right:1%;top:2%;bottom:1%;
+    border:2px dashed rgba(242,193,78,.55);pointer-events:none;}
+  .zlabel{position:absolute;font-size:8px;letter-spacing:1px;pointer-events:none;
+    text-shadow:1px 1px 0 #000;white-space:nowrap;display:flex;align-items:center;gap:7px;opacity:.95;}
+  .zlabel s{display:inline-block;width:10px;height:10px;text-decoration:none;border:2px solid rgba(0,0,0,.5);}
+  .banner{position:absolute;color:#cfe3d6;font-size:8px;letter-spacing:2px;pointer-events:none;
+    text-shadow:1px 1px 0 #000;white-space:nowrap;opacity:.92;}
+  .scan{position:absolute;inset:0;pointer-events:none;z-index:5;opacity:0;transition:opacity .2s;
+    background:repeating-linear-gradient(to bottom,rgba(0,0,0,.3) 0 1px,rgba(0,0,0,0) 1px 3px);}
+  .scan.on{opacity:1;}
+  .vig{position:absolute;inset:0;pointer-events:none;z-index:4;
+    background:radial-gradient(125% 95% at 50% 45%,rgba(0,0,0,0) 55%,rgba(0,0,0,.5) 100%);}
+
+  #main{display:grid;grid-template-columns:1fr 356px;gap:10px;margin-top:10px;align-items:start;}
+  @media (max-width:1120px){ #main{grid-template-columns:1fr;} }
+
+  .dossier{display:grid;grid-template-columns:250px 1fr;border:2px solid var(--line);background:var(--panel);}
+  .dcol{padding:11px;}
+  .dcol+.dcol{border-left:2px solid var(--line);}
+  .idcard{display:flex;gap:10px;align-items:flex-start;}
+  canvas#ava{width:96px;height:112px;flex:0 0 96px;background:#0d1320;border:2px solid var(--line);}
+  .who{min-width:0;}
+  .who .nm{font-size:10px;color:var(--amber);line-height:1.6;}
+  .who .rl{font-size:7px;color:var(--green);margin-top:7px;line-height:1.8;}
+  .who .an{font-size:7px;color:var(--dim);margin-top:7px;line-height:1.8;}
+  .tag{font-size:7px;color:#b9c8cd;line-height:2;margin:10px 0 0;border-left:2px solid var(--line);padding-left:8px;}
+  .sec{font-size:7px;color:var(--green);letter-spacing:1px;margin:0 0 8px;}
+  ul.mand{margin:0;padding:0;list-style:none;}
+  ul.mand li{font-size:7px;color:#cfdce0;line-height:2;padding-left:12px;position:relative;margin-bottom:3px;}
+  ul.mand li:before{content:'>';position:absolute;left:0;color:var(--amber);}
+  .law{font-size:7px;color:#f0907f;line-height:2;margin-top:10px;border:2px solid #3a2029;background:#1a1114;padding:8px;}
+  .soul{font-size:7px;line-height:2.1;color:#a9d8c4;background:#0d1320;border:2px solid var(--line);
+    padding:10px;white-space:pre-wrap;max-height:210px;overflow-y:auto;}
+  .bars{display:flex;flex-direction:column;gap:7px;}
+  .bar{font-size:7px;color:var(--dim);}
+  .bar .lb{display:flex;justify-content:space-between;margin-bottom:4px;gap:6px;}
+  .bar .tr{height:8px;background:#0d1320;border:2px solid var(--line);}
+  .bar .fl{height:100%;background:linear-gradient(90deg,#2b6e58,#3ad0a0);}
+  .bar .fl.think{background:linear-gradient(90deg,#2b4f6e,#7fd3f0);}
+  .bar .fl.risk{background:linear-gradient(90deg,#6e2b2b,#e05c4b);}
+  .log{margin-top:10px;background:var(--panel2);border:2px solid var(--line);padding:8px;height:132px;overflow:hidden;}
+  .log div{font-size:7px;line-height:2;color:#8fb9a5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .note{font-size:6px;color:#6b7a80;margin-top:9px;line-height:2;}
+
+  .card{border:2px solid var(--line);background:var(--panel);margin-bottom:10px;}
+  .card>h2{margin:0;font-size:8px;color:var(--green);letter-spacing:1px;padding:9px 10px;
+    border-bottom:2px solid var(--line);background:var(--panel2);display:flex;justify-content:space-between;gap:8px;}
+  .card>h2 span{color:var(--dim);}
+  .card .body{padding:10px;}
+  .kv{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:2px dashed #1d2740;font-size:7px;line-height:1.9;align-items:center;}
+  .kv:last-child{border-bottom:none;}
+  .kv b{color:#dff3e6;font-weight:normal;}
+  .up{color:var(--green);} .dn{color:var(--red);}
+  .crew{display:flex;gap:7px;align-items:center;padding:5px 0;border-bottom:2px dashed #1d2740;cursor:pointer;}
+  .crew:last-child{border-bottom:none;}
+  .crew:hover{background:rgba(58,208,160,.08);}
+  .crew .dot{width:8px;height:8px;border:2px solid var(--line);flex:0 0 8px;}
+  .crew .w{flex:1;min-width:0;}
+  .crew .n{font-size:6px;color:#dff3e6;display:block;margin-bottom:3px;}
+  .crew .r{font-size:6px;color:var(--dim);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .crew .st{font-size:6px;color:var(--amber);display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .empty{font-size:7px;color:var(--dim);text-align:center;padding:12px 6px;line-height:2;}
+
+  /* mission control */
+  .pipe{display:flex;gap:4px;flex-wrap:wrap;}
+  .pstep{flex:1;min-width:92px;border:2px solid var(--line);background:#0d1320;padding:7px;}
+  .pstep .pl{font-size:6px;color:var(--dim);display:block;margin-bottom:5px;letter-spacing:1px;}
+  .pstep .pw{font-size:6px;color:#dff3e6;display:block;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pstep .pb{height:7px;background:#16283a;border:2px solid var(--line);}
+  .pstep .pb i{display:block;height:100%;}
+  .pstep .pn{font-size:6px;color:var(--dim);margin-top:5px;display:block;}
+  .pstep.active{border-color:var(--amber);}
+  .pstep.done{border-color:var(--green);}
+  .mtile{border:2px solid var(--line);background:#0d1320;padding:8px;text-align:center;}
+  .mtile b{display:block;font-size:12px;color:#dff3e6;margin-bottom:4px;}
+  .mtile span{font-size:6px;color:var(--dim);letter-spacing:1px;}
+  .mtile.bad b{color:var(--red);} .mtile.good b{color:var(--green);}
+  canvas#burn{width:100%;height:70px;background:#0d1320;border:2px solid var(--line);display:block;}
+  table.art{width:100%;border-collapse:collapse;}
+  table.art th{font-size:6px;text-align:left;padding:4px;background:#161f30;border:2px solid var(--line);color:var(--green);}
+  table.art td{font-size:6px;padding:4px;border:2px solid var(--line);background:#0d1320;color:#cfdce0;}
+  .artst{font-size:6px;padding:1px 3px;border:2px solid var(--line);}
+  .artst.done{background:#12301f;color:var(--green);}
+  .artst.running{background:#302a12;color:var(--amber);}
+  .artst.failed{background:#301212;color:var(--red);}
+
+  /* cast gallery + builder */
+  .castgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px;}
+  .castc{border:2px solid var(--line);background:#0d1320;padding:7px;text-align:center;cursor:pointer;}
+  .castc:hover{border-color:var(--green);}
+  .castc canvas{width:60px;height:72px;background:#0a0f18;border:2px solid #1a2234;}
+  .castc .cn{font-size:6px;color:#dff3e6;margin-top:5px;line-height:1.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .castc .ct{font-size:5px;color:var(--dim);line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .buildrow{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
+  .buildrow .brl{font-size:6px;color:var(--dim);width:64px;flex:0 0 64px;line-height:2;padding-top:2px;}
+  .buildrow button{border:2px solid var(--line);background:#1b2334;padding:4px 6px;font-size:6px;color:var(--ink);}
+  .buildrow button.on{border-color:var(--green);color:var(--green);}
+  .swatch{border:2px solid var(--line);width:16px;height:16px;cursor:pointer;}
+  .swatch.on{border-color:var(--amber);outline:1px solid var(--amber);}
+  .buildprev{display:flex;gap:14px;align-items:flex-start;margin-bottom:10px;}
+  .buildprev canvas{width:120px;height:144px;background:#0a0f18;border:2px solid var(--line);}
+
+  /* workflow tree */
+  .task{border-left:2px solid var(--line);padding-left:9px;margin-bottom:8px;}
+  .task .th{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:7px;line-height:1.9;}
+  .task .tn{color:#dff3e6;}
+  .task .tm{font-size:6px;color:var(--dim);margin-top:4px;line-height:1.9;}
+  .task .bar2{height:7px;background:#0d1320;border:2px solid var(--line);margin-top:5px;}
+  .task .bar2 i{display:block;height:100%;background:linear-gradient(90deg,#2b6e58,#3ad0a0);}
+  .task.done{border-left-color:var(--green);}
+  .task.blocked{border-left-color:var(--red);}
+  .task.running{border-left-color:var(--amber);}
+  .task .kids{margin-top:7px;padding-left:4px;}
+
+  .backdrop{position:fixed;inset:0;background:rgba(4,7,12,.82);display:flex;align-items:center;justify-content:center;z-index:1500;padding:14px;}
+  .modal{width:min(780px,100%);max-height:90vh;overflow-y:auto;background:var(--panel);border:2px solid var(--line);padding:14px;}
+  .modal h3{font-size:10px;color:var(--green);margin:0 0 10px;line-height:1.8;}
+  .modal .acts{display:flex;gap:7px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap;}
+  .mtext{background:#0d1320;border:2px solid var(--line);padding:11px;font-size:7px;line-height:2.1;
+    white-space:pre-wrap;max-height:52vh;overflow-y:auto;color:#cfdce0;}
+
+  .foot{border:2px solid var(--line);border-top:none;background:var(--panel2);padding:9px 10px;
+    font-size:6px;color:#6b7a80;line-height:2;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .foot em{color:var(--green);font-style:normal;}
+  #toasts{position:fixed;top:12px;right:12px;display:flex;flex-direction:column;gap:7px;z-index:1900;pointer-events:none;}
+  .toast{background:#08101c;color:var(--amber);border:2px solid var(--amber);padding:9px 10px;font-size:7px;line-height:2;max-width:340px;}
+  .toast.bad{border-color:var(--red);color:#ffc9c0;}
+  @media (max-width:780px){ .dossier{grid-template-columns:1fr;} .dcol+.dcol{border-left:none;border-top:2px solid var(--line);} }
+</style>
+</head>
+<body>
+<div id="page">
+
+  <div class="hdr">
+    <div>
+      <h1>&#9632; HERMES PIXEL OFFICE</h1>
+      <div class="sub" id="hdrSub">REAL-TIME 2D VISUALIZER FOR YOUR AGENT SQUAD</div>
+    </div>
+    <div class="btns">
+      <button class="retro on" id="bDay">DAY</button>
+      <button class="retro" id="bNight">NIGHT</button>
+      <button class="retro on" id="bScan">SCANLINES</button>
+      <button class="retro" id="bSfx">SFX : OFF</button>
+      <button class="retro run" id="bConnect">&#9656; CONNECT STATE</button>
+      <button class="retro" id="bExport">&#9660; EXPORT REPORT</button>
+      <button class="retro" id="bCast">CHARACTERS</button>
+    </div>
+  </div>
+
+  <div class="chiprow">
+    <span class="chip" id="cFeed">STATE: —</span>
+    <span class="chip" id="cEndpoint">—</span>
+    <span class="chip" id="cSquad">SQUAD 0</span>
+    <span class="chip" id="cActive">ACTIVE 0</span>
+    <span class="chip" id="cWf">WORKFLOW —</span>
+    <button class="retro" id="bDelegate">&#9656; DELEGATE TASK</button>
+    <button class="retro" id="bDemo">RUN DEMO WORKFLOW</button>
+    <button class="retro" id="bReset">RESET</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="office" width="448" height="560"></canvas>
+    <div class="ov" id="ov"></div>
+    <div class="scan on" id="scan"></div>
+    <div class="vig"></div>
+  </div>
+
+  <div id="main">
+    <div>
+      <div class="dossier" id="dossier">
+        <div class="dcol">
+          <div class="idcard">
+            <canvas id="ava" width="96" height="112"></canvas>
+            <div class="who">
+              <div class="nm" id="nm">—</div>
+              <div class="rl" id="rl">—</div>
+              <div class="an" id="an">—</div>
+            </div>
+          </div>
+          <p class="tag" id="tag"></p>
+          <div class="note" id="panelNote">Click any agent in the room. The floor mirrors what the agents are actually doing: thinking, tool use, coding, web search, delegation.</div>
+        </div>
+        <div class="dcol">
+          <div style="display:grid;grid-template-columns:1fr 236px;gap:14px">
+            <div>
+              <div class="sec" id="divName">&#9656; SOUL.MD</div>
+              <div class="soul" id="soul"></div>
+            </div>
+            <div>
+              <div class="sec">&#9656; DESK TELEMETRY</div>
+              <div class="bars" id="bars"></div>
+              <div class="log" id="log"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="mcCard">
+        <h2>&#9656; MISSION CONTROL <span id="mcProject"></span></h2>
+        <div class="body">
+          <div id="mcPipeline"></div>
+          <div id="mcMetrics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin:10px 0;"></div>
+          <div id="mcBurn"></div>
+          <div id="mcArtifacts" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <div class="card" id="viewCard" style="margin-top:10px;">
+        <h2 id="viewTitle">&#9656; LIVE ACTIVITY</h2>
+        <div class="body" id="viewBody"></div>
+      </div>
+    </div>
+
+    <div id="rail">
+      <div class="card">
+        <h2>&#9656; SQUAD <span id="squadCount"></span></h2>
+        <div class="body" id="crewList"></div>
+      </div>
+      <div class="card">
+        <h2>&#9656; WORKFLOW <span id="wfCount"></span></h2>
+        <div class="body" id="wfList"></div>
+      </div>
+      <div class="card">
+        <h2>&#9656; EVENT LOG</h2>
+        <div class="body" id="eventList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>STATE SCHEMA: <em>workflow · agents[status, task, tool, progress, step]</em> &middot; point it at your own endpoint and the floor mirrors your run</span>
+    <span>WITH NO ENDPOINT IT RUNS AN OPENLY-LABELLED SIMULATION &middot; it never pretends a simulated step is real</span>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="modalRoot"></div>
+
+<script>
+/* ============================================================================
+   HERMES PIXEL OFFICE
+   A real-time 2D pixel visualizer for a multi-agent squad. It reads a small
+   JSON state document from an endpoint you control and turns it into movement
+   on a floor: thinking pods, tool bench, code terminal, search desk,
+   delegation hub, writing desk. With no endpoint it runs a clearly-labelled
+   simulation so the floor is never empty and never lies about what it shows.
+   ============================================================================ */
+
+const RW=448, RH=560, WALL_H=58;
+const WALK={ x0:14, x1:RW-14, y0:78, y1:RH-20 };
+const SPRITE_W=20, SPRITE_H=24, SPRITE_SCALE=2;
+
+/* ---------- the floor: one station per kind of agent activity ---------- */
+const STATIONS={
+  idle:    { name:'LOUNGE',           x:58,  y:112, color:'#8fa3a8', pose:'idle'    },
+  think:   { name:'PRODUCT OWNER',    x:74,  y:200, color:'#7fd3f0', pose:'think'   },
+  tool:    { name:'DESIGN DESK',      x:206, y:196, color:'#f2c14e', pose:'tool'    },
+  code:    { name:'ENGINEERING BAY',  x:346, y:200, color:'#3ad0a0', pose:'code'    },
+  search:  { name:'RESEARCH DESK',    x:92,  y:340, color:'#a06cd5', pose:'search'  },
+  write:   { name:'TASK BOARD (PM)',  x:250, y:344, color:'#f27ca8', pose:'write'   },
+  qa:      { name:'QA SANDBOX',       x:150, y:432, color:'#e0b25a', pose:'qa'      },
+  release: { name:'RELEASE CHUTE',    x:330, y:436, color:'#e05c4b', pose:'ship'    }
+};
+const STATUS_TO_STATION={ idle:'idle', thinking:'think', tool:'tool', coding:'code',
+  searching:'search', writing:'write', qa:'qa', testing:'qa', review:'qa',
+  delegating:'release', shipping:'release', deploy:'release', deploying:'release', done:'idle', blocked:'qa' };
+/* the delivery pipeline, in order — Mission Control draws this */
+const PIPELINE=[
+  { key:'think',  label:'REQUIREMENTS', who:'PRODUCT OWNER', color:'#7fd3f0' },
+  { key:'write',  label:'PLANNING',     who:'PROJECT MANAGER', color:'#f27ca8' },
+  { key:'code',   label:'BUILD',        who:'ENGINEER',      color:'#3ad0a0' },
+  { key:'tool',   label:'DESIGN',       who:'DESIGNER',      color:'#f2c14e' },
+  { key:'qa',     label:'QA',           who:'QA TESTER',     color:'#e0b25a' },
+  { key:'release',label:'RELEASE',      who:'DEPLOY / OPS',  color:'#e05c4b' }
+];
+const STATION_SPOTS={
+  idle:[[36,120],[60,132],[86,122],[110,134],[70,108],[100,110]],
+  think:[[44,208],[78,214],[112,206],[146,214],[60,188],[132,188]],
+  tool:[[176,204],[210,210],[244,202],[182,182],[238,182],[210,224]],
+  code:[[316,208],[350,214],[384,206],[330,188],[372,188],[350,226]],
+  search:[[62,348],[96,356],[130,346],[162,354],[80,326],[146,326]],
+  write:[[220,352],[254,358],[288,350],[320,356],[238,330],[300,330]],
+  qa:[[112,440],[146,448],[180,438],[196,422],[130,414],[164,414]],
+  release:[[296,444],[330,450],[360,440],[312,422],[346,422],[356,462]]
+};
+function stationSpots(id){ return STATION_SPOTS[id]||STATION_SPOTS.idle; }
+
+/* ---------- the squad: SOUL.md style profiles ---------- */
+/* ============================================================================
+   THE CAST — every named character, assembled from the shared parts library.
+   Each record is a mix-and-match spec: hair, style, mask, weapon, outfit...
+   ============================================================================ */
+const CAST=[
+  { id:'bapi',      name:'BAPI DAS',    style:['short'], hair:'#2b1d12', eyes:'#3a6ecf', outfit:'#6d5bd0', pants:'#33415c', scar:false, tag:'The boss. Owns the floor.' },
+  { id:'luffy',     name:'LUFFY',       style:['strawhat'], hair:'#1b1b1f', eyes:'#8a5a2b', outfit:'#d94f3d', pants:'#2f5fa8', scar:true, blush:true, tag:'Straw hat, scar under the eye.' },
+  { id:'saitama',   name:'SAITAMA',     style:['bald'], eyes:'#3a3a44', eyes2:'dead', mouth:'flat', brows:'none', outfit:'#e8c46a', pants:'#8a5a2b', tag:'One-punch stare. No expression is a feature.' },
+  { id:'zoro',      name:'ZORO',        style:['spiky'], hair:'#2f7d33', eyes:'#2f7d33', mark:true, earring:'#f2c14e', outfit:'#2f6f3a', pants:'#232a38', tag:'Green hair, earring, scar.' },
+  { id:'sanji',     name:'SANJI',       style:['sweepL'], coverEye:'left', hair:'#e8b23a', eyes:'#3a6ecf', outfit:'#2b3a5a', pants:'#1b1f2a', big:true, tag:'One eye hidden, blond, tall.' },
+  { id:'nami',      name:'NAMI',        style:['long'], hair:'#f2a24a', eyes:'#c96a2b', outfit:'#2f6fbf', pants:'#2f3f5a', blush:true, tag:'Orange hair, blue top.' },
+  { id:'usopp',     name:'USOPP',       style:['slick'], hair:'#3b2a1a', eyes:'#3a3a44', outfit:'#8a6a2a', pants:'#3a4a2f', nose:true, weapon:'slingshot', tag:'The long nose and a slingshot.' },
+  { id:'chopper',   name:'CHOPPER',     style:['cap'], accent:'#e05c8a', hair:'#5a3a1e', eyes:'#c96a7a', outfit:'#c0392b', pants:'#8a4a2a', blush:true, tag:'Pink hat, red jumper.' },
+  { id:'robin',     name:'ROBIN',       style:['bob'], hair:'#2b1d12', eyes:'#4a3a6a', outfit:'#8a5fc0', pants:'#3a2f52', tag:'Dark bob, violet eyes.' },
+  { id:'franky',    name:'FRANKY',      style:['mohawk'], hair:'#4fd0e0', eyes:'#3ad0a0', glasses:true, outfit:'#d0703a', pants:'#2b3448', big:true, tag:'Cyan mohawk, shades, big build.' },
+  { id:'brook',     name:'BROOK',       style:['bald'], mask:'skull', outfit:'#14141c', pants:'#0f1016', big:true, tag:'A skeleton in a suit. He is all bones.' },
+  { id:'jinbe',     name:'JINBE',       style:['slickback'], hair:'#1b1f2a', eyes:'#3ad0a0', outfit:'#2f6fb0', pants:'#1b3a4a', big:true, tag:'Blue-skinned, broad.' },
+  { id:'law',       name:'TRAFALGAR LAW',style:['furhat'], hair:'#1b1b2a', eyes:'#9a6ad0', outfit:'#2b2140', pants:'#1b1f2a', weapon:'sword', tag:'Fur hat, violet eyes, sword.' },
+  { id:'kid',       name:'EUSTASS KID', style:['spiky'], hair:'#c0281e', eyes:'#c0281e', outfit:'#2b2f3a', pants:'#1b1f2a', big:true, weapon:'bigsword', tag:'Red spikes and a sword too big.' },
+  { id:'perona',    name:'PERONA',      style:['twin'], hair:'#e8a0c8', eyes:'#a06cd5', outfit:'#5a3f7a', pants:'#3a2f52', blush:true, tag:'Pink twin tails, parasol.' },
+  { id:'shanks',    name:'SHANKS',      style:['slickback'], hair:'#c0281e', eyes:'#3a3a44', beard:'dark', outfit:'#c0392b', pants:'#2f4058', scar:true, tag:'Red coat, red hair, the scar.' },
+  { id:'hancock',   name:'BOA HANCOCK', style:['long'], hair:'#1b1b2a', eyes:'#2f5fa8', outfit:'#8a1a3a', pants:'#5a1a3a', earring:'#e8c46a', blush:true, tag:'Black hair, gold snake earrings.' },
+  { id:'smoker',    name:'SMOKER',      style:['spiky'], hair:'#cfd6e0', eyes:'#5a6a7a', mask:'cigars', outfit:'#e8ecf2', pants:'#3f5a6a', big:true, tag:'White coat, two cigars.' },
+  { id:'tashigi',   name:'TASHIGI',     style:['bob'], hair:'#2b1d12', eyes:'#3a5a8a', glasses:true, outfit:'#3f5a6a', pants:'#2b3448', weapon:'sword', tag:'Glasses and a sword.' },
+  { id:'vivi',      name:'VIVI',        style:['twin'], hair:'#7fd3f0', eyes:'#3a6ecf', outfit:'#e8ecf2', pants:'#2f5fa8', blush:true, tag:'Blue twin tails, white dress.' },
+  { id:'goku',      name:'GOKU',        style:['flame'], hair:'#e8b23a', eyes:'#2b2118', outfit:'#f26b1f', pants:'#2f5fa8', big:true, tag:'Spiky gold hair, orange gi.' },
+  { id:'gojo',      name:'GOJO',        style:['spiky'], hair:'#e8ecf2', eyes:'#7fd3f0', mask:'blindfold', outfit:'#232733', pants:'#1b1f2a', big:true, tag:'White hair, blindfold, that smile.' },
+  { id:'kakashi',   name:'KAKASHI',     style:['slick'], hair:'#cfd6e0', eyes:'#3a3a44', mask:'mask', outfit:'#4a5a6b', pants:'#2b2f3a', tag:'Mask over the face, one eye out.' },
+  { id:'levi',      name:'LEVI',        style:['undercut'], hair:'#12131a', eyes:'#3a3a44', outfit:'#3f4a5a', pants:'#2b2f3a', tag:'Undercut, deadpan, very short.' },
+  { id:'lawliet',   name:'L',           style:['long'], hair:'#12131a', eyes:'#3a3a44', outfit:'#e8ecf2', pants:'#2f4058', tag:'Sits sideways, thinks in probabilities.' }
+];
+const HAIR_CHOICES=[['short','#2b1d12'],['spiky','#2f7d33'],['flame','#e8b23a'],['slick','#3b2a1a'],
+  ['long','#f2a24a'],['bob','#2b1d12'],['twin','#f2d24e'],['braid','#e8b23a'],['undercut','#12131a'],
+  ['bald','#000000'],['slickback','#c9a227'],['mohawk','#4fd0e0'],['ponytail','#1b1b2a'],
+  ['sweepL','#e8b23a'],['sweepR','#2b1d12'],['strawhat','#1b1b1f'],['cap','#5a3a1e'],
+  ['band','#1b1f2a'],['tophat','#2b1d12'],['furhat','#1b1b2a']];
+const HAIR_COLORS=['#1b1b1f','#2f7d33','#e8b23a','#f2a24a','#f2d24e','#c0281e','#2b1d12','#cfd6e0',
+  '#e8ecf2','#4fd0e0','#5a3a1e','#1b1b2a','#e8a0c8','#7fd3f0','#12131a','#c9a227'];
+const OUTFIT_COLORS=['#d94f3d','#2f6f3a','#2f6fbf','#e8c46a','#8a5fc0','#2b3a5a','#c0392b','#e8ecf2',
+  '#232733','#3f4a5a','#8a6a2a','#a06cd5','#2f6fb0','#14141c','#6d5bd0','#e05c8a'];
+const MASK_CHOICES=[['none','none'],['blindfold','blindfold'],['mask','mask'],['skull','skull'],['cigars','cigars']];
+const WEAPON_CHOICES=[['none','none'],['sword','sword'],['bigsword','bigsword'],['staff','staff'],['slingshot','slingshot']];
+
+const DEFAULT_SQUAD=[
+  { id:'po', name:'OWNER', role:'PRODUCT OWNER', model:'local',
+    skills:['requirements','prioritise','accept'], outfit:'#7fd3f0', hair:'#1b1b1f', style:['long'],
+    eyes:'#8a5a2b', blush:true, pants:'#2f5fa8',
+    soul:'# SOUL.md — PRODUCT OWNER\n\nI decide what is worth building and what "done" means.\n\nRULES\n- Every requirement gets an acceptance test the team can run.\n- I say no to scope that has no user.\n- Ambiguity is a defect: rewrite it before handover.\n- I accept the work only against the written test.' },
+  { id:'pm', name:'PLANNER', role:'PROJECT MANAGER', model:'local',
+    skills:['breakdown','assign','track'], outfit:'#f27ca8', hair:'#2b1d12', style:['bob'],
+    eyes:'#4a3a6a', blush:true, pants:'#3a2f52',
+    soul:'# SOUL.md — PROJECT MANAGER\n\nI turn one requirement into tasks with owners and a sequence.\n\nRULES\n- No task without an owner and a next action.\n- Surface collisions early: two agents touching one file.\n- Report the queue honestly, including what is stalled.\n- A blocked task is escalated the same day, not hidden.' },
+  { id:'eng', name:'ENGINEER', role:'SOFTWARE ENGINEER', model:'local',
+    skills:['edit','shell','test'], outfit:'#4ad46a', hair:'#2f7d33', style:['spiky'],
+    eyes:'#2f7d33', mark:true, pants:'#232a38',
+    soul:'# SOUL.md — SOFTWARE ENGINEER\n\nI build the thing. Code, config, pipeline.\n\nRULES\n- Read the existing code before writing new code.\n- Run the test before claiming the fix works.\n- Small diffs, one purpose each.\n- Two failures for the same reason means stop and report the exact error.' },
+  { id:'designer', name:'DESIGNER', role:'UI / UX DESIGNER', model:'local',
+    skills:['layout','tokens','a11y'], outfit:'#f2c14e', hair:'#5a3a1e', style:['hat'],
+    eyes:'#c96a7a', blush:true, pants:'#b4552b',
+    soul:'# SOUL.md — UI/UX DESIGNER\n\nI make it make sense to a human on first use.\n\nRULES\n- Every screen answers: what is this, what can I do, what happens next.\n- Contrast and focus states are not optional.\n- Consistent spacing beats clever spacing.\n- If it needs explaining in a tooltip, redesign it.' },
+  { id:'qa', name:'QA', role:'QA TESTER', model:'local',
+    skills:['test','repro','regress'], outfit:'#e0b25a', hair:'#3b2a1a', style:['slick'],
+    eyes:'#3a3a44', beard:true, pants:'#3a4a2f',
+    soul:'# SOUL.md — QA TESTER\n\nI try to break it, and I write down exactly how.\n\nRULES\n- A bug report is a numbered reproduction, not an opinion.\n- Reproduce twice before filing.\n- Test the acceptance criteria, then test the edges.\n- "Works on my machine" is not a result.' },
+  { id:'deploy', name:'RELEASE', role:'DEPLOY / OPS', model:'local',
+    skills:['build','ship','rollback'], outfit:'#e05c4b', hair:'#1b1b1f', style:['strawhat'],
+    eyes:'#3ad0a0', pants:'#2f5fa8',
+    soul:'# SOUL.md — DEPLOY / OPS\n\nI ship it, and I can take it back.\n\nRULES\n- No release without a green test run and a rollback path.\n- Record what changed and what version.\n- Watch it after deploy; the first minutes are the risky ones.\n- If it degrades, roll back first and diagnose after.' }
+];
+
+const state={
+  squad:[], tasks:[], events:[], selected:null, view:'live',
+  mode:'sim', endpoint:'http://127.0.0.1:9119/state', lastSync:0, syncError:'',
+  night:false, scan:true, sound:false, workflow:null, demoStep:0, timer:null,
+  report:'', step:0,
+  project:null, artifacts:[], metrics:{ tests:null, bugs:null, files:null, coverage:null },
+  history:[]
+};
+const units={};
+let T=0, lastRaf=0, rafId=null;
+
+/* ============================================================================
+   ANIME CHIBI SPRITES (20x24) — same engine as the other floors
+   ============================================================================ */
+/* ---- ANIME CHIBI CHARACTER BUILDER ------------------------------------------
+   A mix-and-match parts system on a 20x24 canvas. Each character is a record of
+   parts, so any combination can be assembled:
+
+     { id, skin, hair, style, brows, eyes, mouth, hat, scar, earring, beard,
+       mask, glasses, horns, outfit, pants, accent, weapon, big }
+
+   Sprite landmarks
+     head box   x4..x15, y1..y12      (hair above y7, eyes on rows 7-10)
+     eyes       fixed screen-thirds   (face is x5..x14)
+     torso      y13..y20              legs y21..y23
+   Poses: idle walk think tool code search write delegate qa ship cheer doze
+   ---------------------------------------------------------------------------- */
+const PCB=document.createElement('canvas');
+PCB.width=SPRITE_W*SPRITE_SCALE; PCB.height=SPRITE_H*SPRITE_SCALE;
+const PCTX=PCB.getContext('2d');
+PCTX.imageSmoothingEnabled=false;
+function px(x,y,w,h,c){
+  PCTX.fillStyle=c;
+  PCTX.fillRect(Math.round(x*SPRITE_SCALE),Math.round(y*SPRITE_SCALE),
+                Math.round(w*SPRITE_SCALE),Math.round(h*SPRITE_SCALE));
+}
+/* out-of-bounds rects are still fine — the canvas clips them */
+function pxg(x,y,w,h,c){ px(x,y,w,h,c); }
+
+const LINE='#1a1420', SKIN='#f6d3a8', SKIN_SH='#d9a878', BLUSH='#f2909e', WHITE='#ffffff';
+
+/* ---------- body ---------- */
+function P_neck(y,outfit){ px(8,y+11,4,2,SKIN_SH); px(5,y+13,10,1,LINE); }
+function P_legs(y,outfit,pants,shoe){
+  const sh=shoe||'#2a2a2a';
+  px(6,y+14,3,2,outfit); px(11,y+14,3,2,outfit);
+  px(6,y+16,3,5,pants); px(11,y+16,3,5,pants);
+  px(6,y+21,3,2,sh); px(11,y+21,3,2,sh);
+  px(6,y+23,1,1,LINE); px(8,y+23,1,1,LINE); px(11,y+23,1,1,LINE); px(13,y+23,1,1,LINE);
+}
+function P_body(y,outfit,accent){
+  px(5,y+13,10,8,outfit);
+  px(5,y+17,10,1,accent||'#101018');          /* belt / sash */
+  px(5,y+13,10,1,'#101018');                  /* shoulder line */
+  px(9,y+13,2,2,accent||SKIN_SH);             /* collar gap */
+  px(3,y+14,2,5,outfit); px(15,y+14,2,5,outfit);
+  px(3,y+19,2,2,LINE); px(15,y+19,2,2,LINE);
+  px(5,y+13,10,1,'rgba(255,255,255,.14)');
+}
+
+/* ---------- eyes ---------- */
+function P_eyes(y,dir,sp,mode){
+  const col=sp.eyes||'#3a6ecf', dark='#12101a';
+  const shut=(mode==='doze'||mode==='drink'||mode==='cheer');
+  if(sp.mask==='blindfold'){
+    px(4,y+5,12,4,'#1b1f2a'); px(4,y+5,12,1,'#2f3a52');
+    px(4,y+9,12,1,'rgba(0,0,0,.35)');
+    return;
+  }
+  if(sp.mask==='skull'){
+    px(6,y+6,3,4,'#14141c'); px(11,y+6,3,4,'#14141c');
+    px(7,y+7,1,1,'#e05c4b'); px(12,y+7,1,1,'#e05c4b');
+    return;
+  }
+  if(sp.mask==='mask'){                        /* kakashi-style face mask */
+    px(5,y+10,10,4,'#232733'); px(7,y+9,6,1,'#232733');
+  }
+  if(shut){
+    if(dir==='e'){ px(10,y+7,3,1,LINE); px(13,y+7,2,1,LINE); }
+    else if(dir==='w'){ px(5,y+7,3,1,LINE); px(8,y+7,2,1,LINE); }
+    else { px(6,y+7,3,1,LINE); px(11,y+7,3,1,LINE); }
+    return;
+  }
+  const eye=(x,open)=>{
+    px(x,y+6,4,4,WHITE);
+    px(x,y+7,4,3,col);
+    px(x+1,y+8,2,2,dark);
+    px(x+1,y+7,2,1,WHITE);
+    if(!open) px(x,y+7,4,1,'#241a2e');         /* dead-eyed */
+  };
+  const dead=(sp.eyes2==='dead');
+  /* sanji: hair covers one eye, so only the near eye is drawn */
+  if(sp.coverEye==='left'){ eye(10,true); }
+  else if(sp.coverEye==='right'){ eye(5,true); }
+  else{
+    const at = dir==='e' ? [8,12] : (dir==='w' ? [5,9] : [5,10]);
+    eye(at[0],!dead); eye(at[1],!dead);
+  }
+  /* eyebrows */
+  const bt=sp.brows||'#2b1d12';
+  if(dir!=='n'){
+    if(dir==='e'){ px(9,y+5,3,1,bt); px(13,y+5,2,1,bt); }
+    else if(dir==='w'){ px(5,y+5,3,1,bt); px(9,y+5,2,1,bt); }
+    else if(sp.brows!=='none'){ px(6,y+5,3,1,bt); px(11,y+5,3,1,bt); }
+  }
+}
+/* ---------- mouth ---------- */
+function P_mouth(y,sp,mode){
+  const ink=LINE;
+  if(sp.mask==='mask'||sp.mask==='skull') return;
+  if(mode==='cheer'||mode==='drink'){ px(9,y+12,3,1,ink); px(10,y+13,1,1,ink); return; }
+  if(sp.mouth==='grin'){ px(8,y+12,5,1,ink); px(9,y+13,1,1,'#f4f1e8'); px(11,y+13,1,1,'#f4f1e8'); return; }
+  if(sp.mouth==='flat'){ px(9,y+12,4,1,ink); return; }
+  if(sp.mouth==='tiny'){ px(9,y+12,2,1,ink); return; }
+  px(9,y+12,2,1,ink);
+}
+/* ---------- head ---------- */
+function P_head(y,dir,sp,mode){
+  px(4,y+1,12,12,SKIN);
+  px(3,y+5,1,3,SKIN); px(16,y+5,1,3,SKIN);
+  (sp.style&&sp.style.length?sp.style:['short']).forEach(s=>{
+    (HAIRS[s]||HAIRS.short)(y,sp.hair||'#2b1d12',sp);
+  });
+  P_eyes(y,dir,sp,mode);
+  if(sp.scar && dir!=='n') px(8,y+5,3,1,'#e0a0a0');
+  if(sp.blush && mode!=='doze'){ px(5,y+11,2,1,BLUSH); px(13,y+11,2,1,BLUSH); }
+  if(sp.beard){
+    const c=sp.beard==='white'?'#e8ecf2':(sp.hair||'#2b1d12');
+    px(7,y+13,6,2,c); px(6,y+11,1,3,c); px(14,y+11,1,3,c);
+  }
+  if(sp.earring){ px(16,y+9,1,2,sp.earring); px(16,y+11,1,1,sp.earring); }
+  if(sp.fang){ px(10,y+13,1,1,'#f4f1e8'); }
+  P_mouth(y,sp,mode);
+  if(sp.nose){ px(10,y+11,2,1,SKIN_SH); }
+  if(sp.glasses){
+    px(4,y+7,7,1,'rgba(20,24,34,.85)'); px(11,y+7,5,1,'rgba(20,24,34,.85)');
+    px(4,y+6,1,1,'rgba(20,24,34,.85)'); px(10,y+6,1,1,'rgba(20,24,34,.85)');
+    px(11,y+6,1,1,'rgba(20,24,34,.85)'); px(15,y+6,1,1,'rgba(20,24,34,.85)');
+  }
+  if(sp.mask==='cigars'){ px(11,y+12,6,1,'#e8ecf2'); px(13,y+12,3,1,'#e05c4b'); }
+  if(sp.horns){
+    px(5,y-1,2,2,'#e8e4d8'); px(13,y-1,2,2,'#e8e4d8');
+    px(5,y-2,2,1,'#d9d4c6'); px(13,y-2,2,1,'#d9d4c6');
+  }
+}
+/* ---------- hair and headgear ---------- */
+const HAIRS={
+  short(y,h){ px(4,y-1,12,5,h); px(4,y+4,1,3,h); px(15,y+4,1,3,h); },
+  spiky(y,h){ px(4,y-2,3,3,h); px(7,y-3,3,4,h); px(10,y-2,3,3,h); px(13,y-1,3,3,h);
+              px(4,y+2,12,2,h); px(4,y+4,1,2,h); px(15,y+4,1,2,h); },
+  flame(y,h){ px(5,y-3,2,4,h); px(8,y-4,3,5,h); px(12,y-3,2,4,h); px(4,y+2,12,2,h);
+              px(4,y+4,1,4,h); px(15,y+4,1,4,h); },
+  slick(y,h){ px(4,y-2,12,5,h); px(4,y+2,12,1,h); px(13,y-2,2,2,h); px(4,y+3,1,3,h); px(15,y+3,1,3,h); },
+  long(y,h){ px(4,y-2,12,5,h); px(3,y+3,2,9,h); px(15,y+3,2,9,h); },
+  bob(y,h){ px(4,y-2,12,6,h); px(3,y+3,2,7,h); px(15,y+3,2,7,h); },
+  twin(y,h){ px(4,y-2,12,5,h); px(2,y-2,3,4,h); px(15,y-2,3,4,h); px(1,y+2,2,9,h); px(17,y+2,2,9,h); },
+  braid(y,h){ px(5,y-2,11,5,h); px(9,y-4,2,3,h); px(4,y+3,1,4,h); px(15,y+3,2,8,h); },
+  undercut(y,h){ px(4,y-1,12,5,h); px(4,y+4,12,1,h); px(4,y+5,1,2,h); px(15,y+5,1,2,h); },
+  bald(y){ px(8,y+1,4,1,'rgba(255,255,255,.3)'); },
+  slickback(y,h){ px(4,y-3,12,5,h); px(3,y+1,2,4,h); px(15,y+1,2,4,h); px(4,y+2,12,1,h); },
+  mohawk(y,h){ px(9,y-4,3,6,h); px(4,y+2,12,2,h); px(4,y+4,1,2,h); px(15,y+4,1,2,h); },
+  ponytail(y,h){ px(4,y-2,12,5,h); px(15,y+2,2,8,h); px(17,y+6,2,5,h); },
+  /* one long fringe over the near eye, then the crown */
+  sweepL(y,h){ px(6,y+2,6,3,h); px(4,y+1,9,3,h); px(13,y-1,3,3,h); px(4,y+3,1,2,h); },
+  sweepR(y,h){ px(7,y+2,6,3,h); px(6,y+1,9,3,h); px(3,y-1,3,3,h); px(15,y+3,1,2,h); },
+  /* headgear */
+  strawhat(y,h,sp){ px(5,y-4,10,4,'#e8c46a'); px(2,y-1,16,2,'#c9a227');
+                    px(4,y-1,12,1,'#8e3a1c'); px(4,y+1,12,1,'#e8c46a'); px(4,y+4,1,3,h); px(15,y+4,1,3,h); },
+  cap(y,h,sp){ px(4,y-3,12,5,sp.accent||'#d94f3d'); px(3,y+2,14,2,LINE);
+               px(6,y+3,8,1,'rgba(0,0,0,.22)'); px(4,y+4,1,2,h); },
+  band(y,h,sp){ px(4,y-2,12,4,h); px(4,y+3,12,2,sp.accent||'#2f5fa8'); px(5,y+4,4,1,'rgba(0,0,0,.2)'); },
+  tophat(y,h,sp){ px(6,y-4,8,4,'#2b3448'); px(3,y,14,2,'#2b3448'); px(4,y+2,12,2,h); },
+  furhat(y,h,sp){ px(3,y-3,14,5,'#d9d4c6'); px(4,y+2,12,2,'#b9b2a0'); px(4,y-1,12,2,h); },
+  /* extras */
+  eyebrowless(y,h){ px(4,y-1,12,5,h); px(4,y+4,1,3,h); px(15,y+4,1,3,h); }
+};
+const STYLE_ALIASES={ plain:['short'], baldhead:['bald'] };
+
+/* ---------- one character ---------- */
+function drawPerson(a,mode,dir,step){
+  PCTX.clearRect(0,0,SPRITE_W*SPRITE_SCALE,SPRITE_H*SPRITE_SCALE);
+  const outfit=a.outfit||'#3ad0a0', pants=a.pants||'#2b3448';
+  const y=(mode==='doze'||mode==='write')?1:0;
+  const yy=y+(step?0:1);
+  const small=!!a.big;                       /* a little taller, wider shoulders */
+
+  /* held items behind the body */
+  if(a.weapon==='sword'){ px(16,yy+6,2,14,'#8fa3b8'); px(15,yy+18,4,2,'#5a3f27'); px(16,yy+5,2,2,'#cfe3f0'); }
+  if(a.weapon==='bigsword'){ px(16,yy-2,3,22,'#9aa3ad'); px(15,yy+18,5,3,'#3a3f4b'); px(16,yy-3,3,2,'#cfe3f0'); }
+  if(a.weapon==='staff'){ px(16,yy+4,1,18,'#c9a06a'); px(15,yy+2,3,2,'#f2c14e'); }
+  if(a.weapon==='slingshot'){ px(16,yy+12,2,8,'#8a5a3b'); px(15,yy+10,4,2,'#5a3f27'); }
+
+  if(mode==='cheer'){ px(2,yy+9,2,5,outfit); px(16,yy+9,2,5,outfit); px(2,yy+7,2,2,SKIN); px(16,yy+7,2,2,SKIN); }
+  P_legs(yy,outfit,pants,a.shoe);
+  P_body(yy,outfit,a.accent);
+  P_neck(yy,outfit);
+  P_head(yy,dir,a,mode);
+
+  /* scene props: what they are doing right now */
+  if(mode==='think'){ px(14,yy+12,3,3,SKIN); px(3,yy+16,3,2,'#d9d4c6'); }
+  if(mode==='tool'){ px(14,yy+14,4,2,'#b9c4d0'); px(15,yy+12,2,4,'#8fa3b8'); }
+  if(mode==='code'){ px(4,yy+16,3,2,'#d9d4c6'); px(13,yy+16,3,2,'#d9d4c6'); }
+  if(mode==='search'){ px(14,yy+13,4,4,'rgba(207,233,240,.85)'); px(17,yy+16,2,2,'#8fa3b8'); }
+  if(mode==='write'){ px(4,yy+16,4,2,'#f4f1e8'); px(12,yy+16,4,2,'#f4f1e8'); }
+  if(mode==='delegate'){ px(15,yy+12,5,4,'#f4f1e8'); px(16,yy+13,3,1,'#8fa3a8'); }
+  if(mode==='qa'){ px(3,yy+13,5,6,'#f4f1e8'); px(4,yy+14,3,1,'#8fa3a8'); px(5,yy+16,3,1,'#8fa3a8');
+                   px(13,yy+12,4,4,'rgba(207,233,240,.85)'); px(16,yy+15,2,2,'#8fa3b8'); }
+  if(mode==='ship'){ px(14,yy+11,6,5,'#c98a45'); px(15,yy+12,4,1,'#8a5a3b'); }
+  if(mode==='drink'){ px(12,yy+11,3,4,'#f4f1e8'); px(12,yy+11,3,1,'#c9c2a8'); }
+  if(mode==='doze'){ px(16,yy+1,2,2,'#cfe3f0'); px(18,yy-1,2,2,'#cfe3f0'); px(20,yy-3,2,2,'#cfe3f0'); }
+  if(mode==='cheer'&&step%2===0){ px(1,yy+4,2,2,'#3ad0a0'); px(17,yy+4,2,2,'#f2c14e'); }
+  if(mode==='walk'){
+    const sw=step%2;
+    px(6,yy+16,3,5,pants); px(11,yy+16,3,5,pants);
+    px(sw?5:6,yy+21,3,2,LINE); px(sw?12:11,yy+21,3,2,LINE);
+  }
+}
+const CACHE={};
+function spriteOf(a,mode,dir,step){
+  const key=mode+'|'+dir+'|'+(step%2);
+  let c=CACHE[a.id];
+  if(!c){ c=CACHE[a.id]={cv:document.createElement('canvas'),key:null}; c.cv.width=SPRITE_W*SPRITE_SCALE; c.cv.height=SPRITE_H*SPRITE_SCALE; }
+  if(c.key!==key){
+    c.key=key;
+    drawPerson(a,mode,dir,step);
+    const g=c.cv.getContext('2d');
+    g.imageSmoothingEnabled=false;
+    g.clearRect(0,0,c.cv.width,c.cv.height);
+    g.drawImage(PCB,0,0);
+  }
+  return c.cv;
+}
+/* clone a character record with overrides — used by the character builder UI */
+function withParts(a,over){ return Object.assign({},a,over||{},{id:(a.id||'char')+'_'+(over&&over.tag||'x')+'_'+(Math.random()*1e5|0)}); }
+
+/* ---------- room drawing helpers ---------- */
+function box(c,x,y,w,h,col){ c.fillStyle=col; c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h)); }
+function frame(c,x,y,w,h,fill,line){ box(c,x,y,w,h,line); box(c,x+2,y+2,w-4,h-4,fill); }
+function agentById(id){ return state.squad.filter(a=>a.id===id)[0]||null; }
+function activeAgents(){ return state.squad.filter(a=>a.status&&a.status!=='idle'&&a.status!=='done'); }
+
+function drawWall(c){
+  box(c,0,0,RW,WALL_H,state.night?'#161c2a':'#232a3a');
+  box(c,0,0,RW,3,'#2b3346');
+  for(let x=0;x<RW;x+=22) box(c,x,3,1,WALL_H-12,'#1e2432');
+  for(let i=0;i<5;i++){
+    const x=16+i*62, w=52, h=26;
+    box(c,x-2,10,w+4,h+4,'#2b3346');
+    if(state.night){
+      box(c,x,12,w,h,'#0d1836'); box(c,x,12,w,7,'#132047');
+      for(let k=0;k<7;k++) box(c,x+3+((k*13+i*7)%(w-6)),14+((k*5+i*3)%(h-6)),1,1,k%2?'#cfe3f0':'#8fb9d6');
+      box(c,x+w-18,16,6,6,'#e8ecf2');
+    }else{
+      box(c,x,12,w,h,'#5fb8dd'); box(c,x,12,w,7,'#7fd3f0');
+      box(c,x+6,17,11,3,'#eaf7fd'); box(c,x+7,15,7,2,'#eaf7fd');
+      box(c,x+w-24,22,13,3,'#dff2fa'); box(c,x+w-21,20,8,2,'#dff2fa');
+      box(c,x+4,30,w-8,8,'#3f6f8f');
+    }
+    box(c,x+w/2-1,12,2,h,'#2b3346'); box(c,x,23,w,2,'#2b3346');
+  }
+  /* live status board on the wall */
+  box(c,232,10,196,36,'#0d1320'); box(c,232,10,196,2,'#3ad0a0');
+  state.squad.slice(0,6).forEach((a,i)=>{
+    const st=STATUS_TO_STATION[a.status]||(a.status==='done'?'idle':'idle');
+    const col=a.status==='blocked'?'#e05c4b':(a.status==='done'?'#3ad0a0':(STATIONS[st]?STATIONS[st].color:'#4a5568'));
+    box(c,238,15+i*5,3,3,col);
+    const w=Math.round(140*(a.progress||0));
+    box(c,244,15+i*5, 168,3,'#16283a');
+    box(c,244,15+i*5, w,3,col);
+  });
+  box(c,0,WALL_H-10,RW,10,'#161b28'); box(c,0,WALL_H-10,RW,1,'#2b3346');
+}
+function drawFloor(c){
+  box(c,0,WALL_H,RW,RH-WALL_H,state.night?'#242a3a':'#2f3547');
+  for(let x=0;x<RW;x+=16) box(c,x,WALL_H,1,RH-WALL_H,'#2a3040');
+  for(let y=WALL_H;y<RH;y+=16) box(c,0,y,RW,1,'#2a3040');
+  for(let x=8;x<RW;x+=16) for(let y=WALL_H+8;y<RH;y+=16) box(c,x,y,1,1,'#3b4359');
+  /* delegation lane from every station into the hub */
+  box(c,206,330,RW-206,2,'rgba(224,130,90,.12)');
+  box(c,60,500,RW-120,2,'rgba(58,208,160,.10)');
+  if(state.night){
+    Object.keys(STATIONS).forEach(k=>{
+      const s=STATIONS[k];
+      for(let r=48;r>14;r-=16){
+        c.fillStyle='rgba(242,193,78,'+(0.014+(48-r)*0.0012)+')';
+        c.fillRect(s.x-r,s.y-Math.round(r*0.5),r*2,Math.round(r));
+      }
+    });
+  }
+}
+function drawStations(c){
+  /* lounge */
+  box(c,24,100,120,42,'#3a2f4a'); box(c,24,100,120,4,'#5a4a70');
+  box(c,30,116,54,20,'#c2562a'); box(c,30,116,54,5,'#e0825a');
+  /* thinking pods: desks with monitors */
+  for(let i=0;i<6;i++){
+    const x=34+i*62;
+    if(x>190) break;
+    box(c,x,178,44,6,'#8a5a3b'); box(c,x,178,44,2,'#a9714a');
+    box(c,x,184,44,3,'#5f3f27');
+    box(c,x+3,166,14,13,'#1b1f2a'); box(c,x+4,167,12,11,'#0d1320');
+    for(let k=0;k<5;k++) box(c,x+6,169+k*2, 3+((k*5+(T>>2))%9),1, k%2?'#7fd3f0':'#3ad0a0');
+    box(c,x+22,180,10,3,'#2b3346'); box(c,x+36,176,4,5,'#e8ecf2');
+  }
+  /* tool bench */
+  box(c,164,186,96,40,'#3a2c22'); box(c,164,186,96,4,'#5a4433');
+  box(c,168,204,88,12,'#8a5a3b'); box(c,168,204,88,3,'#a9714a');
+  box(c,174,192,22,12,'#6b7a8c'); box(c,204,194,16,10,'#b9c4d0'); box(c,228,190,26,14,'#c98a45');
+  box(c,250,214,10,10,'#e05c4b');
+  /* code terminal: three monitors */
+  for(let i=0;i<3;i++){
+    const x=304+i*46;
+    box(c,x,182,40,30,'#1b1f2a'); box(c,x+2,184,36,26,'#0d1320');
+    box(c,x+2,184,36,1,'#2b3346');
+    for(let k=0;k<7;k++){
+      const w=6+((k*7+i*5+(T>>1))%26);
+      box(c,x+4,186+k*3, w,1, k%3===0?'#3ad0a0':(k%3===1?'#7fd3f0':'#2f6f5f'));
+    }
+    box(c,x+16,212,8,4,'#2b3346'); box(c,x+12,216,16,3,'#2b3346');
+  }
+  /* search desk */
+  box(c,44,322,150,44,'#33244a'); box(c,44,322,150,4,'#5a3f7a');
+  box(c,50,336,20,26,'#3a2f18'); for(let i=0;i<4;i++) box(c,53,339+i*6,14,3,'#8a6a3a');
+  box(c,76,338,20,24,'#3a2f18'); for(let i=0;i<4;i++) box(c,79,341+i*6,14,3,'#8a6a3a');
+  box(c,140,330,34,26,'#1b1f2a'); box(c,142,332,30,22,'#0d1320');
+  box(c,156,334,2,2,'#cfe3f0'); box(c,158,338,2,2,'#cfe3f0');
+  box(c,104,338,26,18,'#2f6f9e'); box(c,106,340,22,14,'#5fb8dd');
+  /* write desk */
+  box(c,196,326,124,44,'#3a2436'); box(c,196,326,124,4,'#5a3a52');
+  box(c,202,342,112,12,'#8a5a3b'); box(c,202,342,112,3,'#a9714a');
+  box(c,208,330,26,12,'#f4f1e8'); for(let i=0;i<4;i++) box(c,211,332+i*3,20,1,'#8fa3a8');
+  box(c,242,332,20,10,'#b9c4d0');
+  /* delegation hub */
+  box(c,350,306,92,50,'#3a2f22'); box(c,350,306,92,4,'#6b4a2a');
+  box(c,356,326,80,22,'#c98a45'); box(c,356,326,80,3,'#e8b478');
+  box(c,362,334,26,10,'#f4f1e8'); box(c,396,332,20,12,'#2f6f9e');
+  /* QA sandbox: test rig + bug wall */
+  box(c,80,414,150,46,'#3a3320'); box(c,80,414,150,4,'#5a5030');
+  box(c,86,432,52,18,'#1b1f2a'); box(c,88,434,48,14,'#0d1320');
+  for(let k=0;k<4;k++) box(c,91,436+k*3, 12+((k*9+(T>>2))%30),1, k%2?'#3ad0a0':'#7fd3f0');
+  box(c,146,428,18,24,'#b9c4d0'); box(c,150,432,10,10,'#22303f');
+  box(c,172,418,50,34,'#2a1c1c');
+  for(let i=0;i<4;i++){
+    box(c,176,422+i*8,20,5,'#e05c4b');
+    if(i%2===0) box(c,200,422+i*8,14,5,'#f2c14e');
+  }
+  /* release chute: crates heading out */
+  box(c,272,412,140,48,'#3a2320'); box(c,272,412,140,4,'#5a2f2a');
+  for(let i=0;i<4;i++){
+    const cx=282+i*32;
+    box(c,cx,436,24,18,'#8a5a3b'); box(c,cx,436,24,3,'#a9714a');
+    box(c,cx+4,440,16,2,'#c9a06a');
+    if(i<2) box(c,cx+2,456,20,4,'#5f3f27');
+  }
+  box(c,272,422,46,8,'#e05c4b'); box(c,276,424,38,4,'#f2909e');
+  /* plants */
+  [[8,150],[432,150],[8,266],[432,266],[8,392],[432,392],[224,520],[224,402]].forEach(p=>{
+    box(c,p[0],p[1]+14,14,10,'#b4552b');
+    box(c,p[0]+1,p[1]+2,5,14,'#2f7d3a'); box(c,p[0]+6,p[1],7,16,'#3a9a63'); box(c,p[0]+11,p[1]+5,5,12,'#2f7d3a');
+  });
+}
+function drawEffects(c){
+  /* activity readouts above each active station */
+  state.squad.forEach(a=>{
+    const u=units[a.id]; if(!u||u.walking) return;
+    const st=STATUS_TO_STATION[a.status];
+    if(!st||st==='idle') return;
+    const col=STATIONS[st].color;
+    const bx=u.x+14, by=u.y-SPRITE_H*SPRITE_SCALE-8;
+    box(c,bx,by,14,5,'#0d1320');
+    box(c,bx+1,by+1,Math.round(12*clamp(a.progress||0,0,1)),3,col);
+    if(a.status==='thinking'){ box(c,bx+6,by-5,2,2,col); box(c,bx+9,by-8,2,2,col); }
+    if(a.status==='searching'){ box(c,bx+3,by-7,5,5,'rgba(207,233,240,.8)'); box(c,bx+7,by-3,2,2,'#8fa3b8'); }
+    if(a.status==='coding'&&(T>>1)%2===0) box(c,bx+2,by-6,2,2,'#3ad0a0');
+    if(a.status==='blocked'){ box(c,bx+5,by-6,4,4,'#e05c4b'); box(c,bx+6,by-5,2,2,'#fff'); }
+    if(a.status==='done'){ box(c,bx+5,by-6,2,2,'#3ad0a0'); box(c,bx+7,by-4,4,2,'#3ad0a0'); }
+  });
+}
+function drawRoom(){
+  const cv=document.getElementById('office'); if(!cv) return;
+  const g=cv.getContext('2d');
+  g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,RW,RH);
+  drawFloor(g); drawWall(g); drawStations(g);
+  const list=state.squad.slice().sort((a,b)=>(units[a.id]?units[a.id].y:0)-(units[b.id]?units[b.id].y:0));
+  list.forEach(a=>{
+    const u=units[a.id]; if(!u) return;
+    const st=STATUS_TO_STATION[a.status]||'idle';
+    const pose=u.walking?'walk':(STATIONS[st]?STATIONS[st].pose:'idle');
+    const step=u.walking?u.frame:((T>>4)%2);
+    g.drawImage(spriteOf(a,pose,u.dir,step), Math.round(u.x-SPRITE_W*SPRITE_SCALE/2), Math.round(u.y-SPRITE_H*SPRITE_SCALE));
+  });
+  drawEffects(g);
+  if(state.night){ g.fillStyle='rgba(8,12,26,.44)'; g.fillRect(0,0,RW,RH); }
+  box(g,0,(T*2)%RH,RW,1,'rgba(255,255,255,.03)');
+}
+
+/* ============================================================================
+   MOVEMENT
+   ============================================================================ */
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function rnd(a,b){ return a+Math.random()*(b-a); }
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function short(s,n){ s=String(s==null?'':s); return s.length>n?s.slice(0,n-1)+'…':s; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function $id(id){ return document.getElementById(id); }
+
+function makeUnit(a){
+  const spots=stationSpots('idle');
+  const s=pick(spots);
+  units[a.id]={ x:s[0], y:s[1], tx:s[0], ty:s[1], dir:'s', walking:false, frame:0, animT:0, seat:null };
+  return units[a.id];
+}
+function freeSpot(x,y,self){
+  const others=Object.keys(units).map(k=>units[k]).filter(u=>u!==self);
+  const offs=[[0,0],[18,0],[-18,0],[0,16],[0,-16],[18,16],[-18,16],[18,-16],[-18,-16],[34,0],[-34,0]];
+  for(let i=0;i<offs.length;i++){
+    const px_=clamp(x+offs[i][0],WALK.x0,WALK.x1), py_=clamp(y+offs[i][1],WALK.y0,WALK.y1);
+    let ok=true;
+    for(let j=0;j<others.length;j++){ if(Math.hypot(others[j].x-px_,others[j].y-py_)<16){ ok=false; break; } }
+    if(ok) return {x:px_,y:py_};
+  }
+  return {x:clamp(x,WALK.x0,WALK.x1),y:clamp(y,WALK.y0,WALK.y1)};
+}
+function assignSeat(a){
+  const st=STATUS_TO_STATION[a.status]||'idle';
+  const spots=stationSpots(st);
+  const taken={};
+  state.squad.forEach(o=>{ if(o!==a&&units[o.id]&&units[o.id].seat!=null) taken[units[o.id].seat]=1; });
+  for(let i=0;i<spots.length;i++){ if(!taken[i]){ units[a.id].seat=i; return spots[i]; } }
+  units[a.id].seat=0;
+  return spots[0];
+}
+function goTo(id,x,y){
+  const u=units[id]; if(!u) return;
+  u.tx=x; u.ty=y;
+  if(Math.hypot(x-u.x,y-u.y)<3){ u.x=x; u.y=y; u.walking=false; return; }
+  u.walking=true;
+  if(Math.abs(x-u.x)>Math.abs(y-u.y)) u.dir=(x>u.x)?'e':'w'; else u.dir=(y>u.y)?'s':'n';
+}
+function moveToStation(a){
+  const s=assignSeat(a);
+  const p=freeSpot(s[0],s[1],units[a.id]);
+  goTo(a.id,p.x,p.y);
+}
+function updateUnits(dt){
+  state.squad.forEach(a=>{
+    const u=units[a.id]; if(!u) return;
+    if(u.walking){
+      const dx=u.tx-u.x, dy=u.ty-u.y, dist=Math.hypot(dx,dy), step=126*dt;
+      if(dist<=step){ u.x=u.tx; u.y=u.ty; u.walking=false; u.frame=0; }
+      else{
+        u.x+=dx/dist*step; u.y+=dy/dist*step;
+        if(Math.abs(dx)>Math.abs(dy)) u.dir=(dx>0)?'e':'w'; else u.dir=(dy>0)?'s':'n';
+        u.animT+=dt; if(u.animT>.14){ u.animT=0; u.frame=(u.frame+1)%2; }
+      }
+    }
+  });
+}
+
+/* ============================================================================
+   THE STATE DOCUMENT — the contract
+   ----------------------------------------------------------------------------
+   {
+     "workflow": { "name": "Industry 5.0 study", "status": "running", "progress": 0.4 },
+     "tasks": [ { "id":"t1","title":"…","owner":"narada","status":"running",
+                  "progress":0.5,"parent":null,"detail":"…" } ],
+     "agents": [ { "id":"aegis","status":"thinking","task":"…","tool":"delegate_task",
+                   "progress":0.3,"step":"3/8","log":["…"] } ]
+   }
+   status maps to a station: idle thinking tool coding searching writing delegating done blocked
+   ============================================================================ */
+const SYNONYMS={
+  think:'thinking', reasoning:'thinking', plan:'thinking', planning:'thinking',
+  tool_use:'tool', tools:'tool', tool:'tool', coding:'coding', code:'coding', edit:'coding',
+  web_search:'searching', search:'searching', researching:'searching', fetch:'searching',
+  write:'writing', writing:'writing', doc:'writing', report:'writing',
+  delegate:'delegating', delegating:'delegating', route:'delegating', routing:'delegating',
+  test:'qa', testing:'qa', qa:'qa', verify:'qa', verifying:'qa', review:'qa', reviewing:'qa',
+  ship:'deploy', shipping:'deploy', deploy:'deploy', deploying:'deploy', release:'deploy', releasing:'deploy', publish:'deploy',
+  complete:'done', completed:'done', finished:'done', error:'blocked', failed:'blocked'
+};
+function normStatus(s){
+  const k=String(s||'idle').toLowerCase().trim();
+  if(SYNONYMS[k]) return SYNONYMS[k];
+  if(['idle','thinking','tool','coding','searching','writing','delegating','done','blocked'].indexOf(k)!==-1) return k;
+  return 'idle';
+}
+/* build a floor agent from a state document entry we have never seen before */
+function makeAgentFromState(inc){
+  const id=String(inc.id);
+  const palette=['#e05c4b','#4ad46a','#2f6fbf','#a06cd5','#f2c14e','#e0825a','#f27ca8','#5aa9e6','#3ad0a0','#9aa7b4'];
+  const hair=['#1b1b1f','#2f7d33','#3b2a1a','#2b1d12','#f2d24e','#5a3a1e','#12131a'];
+  const style=[['short'],['spiky'],['bob'],['slick'],['twin'],['hat'],['long']];
+  const eyes=['#3a6ecf','#8a5a2b','#2f7d33','#4a3a6a','#e05c8a','#3ad0a0','#9a6ad0'];
+  const k=Math.abs(id.split('').reduce((h,c)=>((h<<5)-h+c.charCodeAt(0))|0,0));
+  const a={
+    id, name:(inc.name||id).toUpperCase().slice(0,14),
+    role:(inc.role||'AGENT').toUpperCase().slice(0,20),
+    model:inc.model||'reported by endpoint',
+    skills:inc.skills||[], outfit:inc.outfit||palette[k%palette.length],
+    hair:inc.hair||hair[k%hair.length], style:inc.style||style[k%style.length],
+    eyes:inc.eyes||eyes[k%eyes.length], pants:'#2b3448',
+    soul:inc.soul||('# SOUL.md — '+(inc.name||id).toUpperCase()+'\n\nNo SOUL.md was supplied by the state endpoint for this agent.\n\nThe floor is showing only what the endpoint reported: '+
+      (inc.task?('task "'+inc.task+'".'):'no task.')),
+    status:'idle', progress:0, tool:'', step:'', task:''
+  };
+  CACHE[id]=undefined;
+  makeUnit(a);
+  return a;
+}
+function applyState(doc,fromEndpoint){
+  if(!doc||typeof doc!=='object') return false;
+  /* reject anything that is not shaped like a state document */
+  if(!Array.isArray(doc.agents)&&!Array.isArray(doc.tasks)&&!doc.workflow) return false;
+  state.mode=fromEndpoint?'live':'sim';
+  /* live state wins: the demo must not overwrite what the endpoint reported */
+  if(fromEndpoint) stopSim();
+  state.lastSync=Date.now();
+  if(Array.isArray(doc.agents)){
+    doc.agents.forEach(inc=>{
+      let a=agentById(inc.id)||agentById(String(inc.id||'').toLowerCase());
+      if(!a){
+        /* an endpoint roster that differs from the demo squad becomes new agents
+           on the floor — the real run is never bent to fit the placeholder squad */
+        if(!inc.id) return;
+        a=makeAgentFromState(inc);
+        state.squad.push(a);
+      }
+      const prevStatus=a.status;
+      a.status=normStatus(inc.status);
+      a.task=inc.task||a.task||'';
+      a.tool=inc.tool||'';
+      a.progress=typeof inc.progress==='number'?clamp(inc.progress,0,1):a.progress||0;
+      a.step=inc.step||'';
+      if(Array.isArray(inc.log))(inc.log||[]).forEach(l=>pushEvent(a.id,short(l,110)));
+      if(inc.model)a.model=inc.model;
+      if(prevStatus!==a.status){
+        pushEvent(a.id,'→ '+a.status+(a.tool?' ('+a.tool+')':''));
+        if(!units[a.id]) makeUnit(a);
+        moveToStation(a);
+      }
+    });
+  }
+  if(doc.project){
+    state.project={
+      name:doc.project.name||'project',
+      stage:doc.project.stage||'',
+      sprint:doc.project.sprint||'',
+      done:typeof doc.project.done==='number'?doc.project.done:null,
+      total:typeof doc.project.total==='number'?doc.project.total:null
+    };
+  }
+  if(Array.isArray(doc.artifacts)){
+    state.artifacts=doc.artifacts.map(a=>({
+      path:a.path||a.name||'(unnamed)', kind:a.kind||'file',
+      status:a.status||'done', owner:a.owner||null, tests:a.tests||'',
+      lines:typeof a.lines==='number'?a.lines:null
+    }));
+  }
+  if(doc.metrics&&typeof doc.metrics==='object'){
+    state.metrics=Object.assign({},state.metrics,doc.metrics);
+  }
+  if(doc.workflow){
+    state.workflow={ name:doc.workflow.name||'workflow',
+      status:doc.workflow.status||'running',
+      progress:typeof doc.workflow.progress==='number'?clamp(doc.workflow.progress,0,1):0,
+      started:doc.workflow.started||state.workflow&&state.workflow.started||Date.now() };
+  }
+  if(Array.isArray(doc.tasks)){
+    state.tasks=doc.tasks.map(t=>({
+      id:t.id||('t'+(Math.random()*1e6|0)), title:t.title||'(untitled)',
+      owner:t.owner||null, status:t.status||'pending',
+      progress:typeof t.progress==='number'?clamp(t.progress,0,1):0,
+      parent:t.parent||null, detail:t.detail||''
+    }));
+  }
+  refreshAll();
+  return true;
+}
+async function pollState(){
+  const url=state.endpoint;
+  try{
+    const ctl=new AbortController();
+    const to=setTimeout(()=>ctl.abort(),3000);
+    const res=await fetch(url,{signal:ctl.signal,cache:'no-store'});
+    clearTimeout(to);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const doc=await res.json();
+    if(applyState(doc,true)){ state.syncError=''; return true; }
+    throw new Error('state document did not match the schema');
+  }catch(e){
+    state.syncError=e.name==='AbortError'?'timeout':(e.message||'unreachable');
+    if(state.mode==='live'){
+      state.mode='sim';
+      pushEvent('system','state endpoint lost — falling back to the labelled simulation');
+      startSim();
+    }
+    renderChips();
+    return false;
+  }
+}
+async function connectState(silent){
+  const ok=await pollState();
+  if(!silent){
+    if(ok) toast('Connected — the floor is mirroring '+state.endpoint,'good');
+    else toast('No state at '+state.endpoint+' ('+state.syncError+') — running the simulation','bad');
+  }
+  return ok;
+}
+
+/* ============================================================================
+   SIMULATION (openly labelled) — a demo squad working one research objective
+   ============================================================================ */
+const DEMO_STEPS=[
+  { po:'thinking',   pm:'idle',    eng:'idle',    designer:'idle',    qa:'idle',      deploy:'idle',
+    note:'Product Owner is turning the request into testable requirements.' },
+  { po:'thinking',   pm:'thinking',eng:'idle',    designer:'idle',    qa:'idle',      deploy:'idle',
+    note:'Planner is breaking requirements into tasks with owners.' },
+  { po:'idle',       pm:'delegating',eng:'coding',designer:'idle',    qa:'idle',      deploy:'idle',
+    note:'Build assigned. Engineer started on the first task.' },
+  { po:'idle',       pm:'thinking',eng:'coding',  designer:'tool',    qa:'idle',      deploy:'idle',
+    note:'Designer working the layout alongside the build.' },
+  { po:'idle',       pm:'thinking',eng:'done',    designer:'done',    qa:'testing',   deploy:'idle',
+    note:'Build and design handed to QA against the acceptance criteria.' },
+  { po:'idle',       pm:'thinking',eng:'coding',  designer:'idle',    qa:'testing',   deploy:'idle',
+    note:'QA found a defect on the empty state; Engineer is fixing it.' },
+  { po:'idle',       pm:'delegating',eng:'done',  designer:'idle',    qa:'testing',   deploy:'idle',
+    note:'Fix verified, regression run in progress.' },
+  { po:'idle',       pm:'done',    eng:'done',    designer:'done',    qa:'done',      deploy:'shipping',
+    note:'Green run. Release chute is packaging the build.' },
+  { po:'done',       pm:'done',    eng:'done',    designer:'done',    qa:'done',      deploy:'done',
+    note:'Deployed. All acceptance tests passed.' }
+];
+const DEMO_PROJECT={ name:'Mission Control MVP', sprint:'SPRINT 1', stage:'build' };
+const DEMO_ARTIFACTS=[
+  { path:'docs/requirements.md', kind:'doc',   status:'done', owner:'po',       lines:64 },
+  { path:'docs/plan.md',         kind:'plan',  status:'done', owner:'pm',       lines:48 },
+  { path:'src/app.ts',           kind:'code',  status:'running', owner:'eng',   lines:412 },
+  { path:'src/ui/board.tsx',     kind:'code',  status:'running', owner:'designer', lines:238 },
+  { path:'test/app.test.ts',     kind:'test',  status:'running', owner:'qa',    lines:96, tests:'18 passed' },
+  { path:'dist/bundle.js',       kind:'build', status:'pending', owner:'deploy', lines:null }
+];
+const DEMO_METRICS={ tests:18, bugs:1, files:6, coverage:82 };
+const DEMO_TASKS=[
+  { id:'t0', title:'Write testable requirements + acceptance criteria', owner:'po', status:'pending', progress:0, parent:null,
+    detail:'Ambiguity is a defect — rewrite before handover.' },
+  { id:'t1', title:'Break the requirement into owned tasks and sequence them', owner:'pm', status:'pending', progress:0, parent:'t0',
+    detail:'No task without an owner and a next action.' },
+  { id:'t2', title:'Implement the board view and wire it to live state', owner:'eng', status:'pending', progress:0, parent:'t1',
+    detail:'Run the test before claiming the fix works.' },
+  { id:'t3', title:'Design the control-room layout and focus states', owner:'designer', status:'pending', progress:0, parent:'t1',
+    detail:'Contrast and focus states are not optional.' },
+  { id:'t4', title:'Test against the acceptance criteria, then the edges', owner:'qa', status:'pending', progress:0, parent:'t1',
+    detail:'A bug report is a numbered reproduction, not an opinion.' },
+  { id:'t5', title:'Package and release with a rollback path', owner:'deploy', status:'pending', progress:0, parent:'t1',
+    detail:'No release without a green run.' }
+];
+
+function stopSim(){
+  if(state.timer){ clearInterval(state.timer); state.timer=null; }
+}
+function startSim(){
+  state.mode='sim';
+  if(!state.project) state.project=Object.assign({},DEMO_PROJECT);
+  if(!state.artifacts.length) state.artifacts=DEMO_ARTIFACTS.map(a=>Object.assign({},a));
+  if(state.metrics.tests==null) state.metrics=Object.assign({},DEMO_METRICS);
+  if(state.timer) clearInterval(state.timer);
+  state.timer=setInterval(()=>{ simStep(); },2600);
+  simStep();
+}
+function simStep(){
+  if(state.mode!=='sim') return;
+  /* the demo has an end: it does not loop back and pretend to restart */
+  if(state.demoStep>=DEMO_STEPS.length){
+    if(state.timer){ clearInterval(state.timer); state.timer=null; }
+    return;
+  }
+  const i=state.demoStep;
+  const s=DEMO_STEPS[i];
+  Object.keys(s).forEach(k=>{
+    if(k==='note') return;
+    const a=agentById(k); if(!a) return;
+    const next=normStatus(s[k]);
+    if(a.status!==next) pushEvent(a.id,'→ '+next);
+    a.status=next;
+    a.progress=Math.min(1,(a.progress||0)+0.14);
+    a.step=(i+1)+'/'+DEMO_STEPS.length;
+    a.tool=({coding:'edit',searching:'web_search',writing:'markdown',tool:'figma',delegating:'delegate_task',
+      qa:'run_tests',shipping:'build'})[next]||'';
+    a.task=(state.tasks.filter(t=>t.owner===a.id)[0]||{}).title||'';
+    if(a._clearTool){ a.tool=''; a._clearTool=0; }
+    if(next==='delegating'&&i<DEMO_STEPS.length-1) a._clearTool=1;
+  });
+  const finished=i>=DEMO_STEPS.length-1;
+  state.tasks.forEach(t=>{
+    const a=agentById(t.owner);
+    if(finished){ t.progress=1; t.status='done'; if(!t._done){ t._done=1; pushEvent(t.owner,'completed “'+short(t.title,40)+'”'); } return; }
+    if(!a) return;
+    t.progress=clamp(t.progress+0.1,0,1);
+    t.status=a.status==='blocked'?'blocked':(a.status==='done'?'done':'running');
+    if(t.status==='done'&&!t._done){ t._done=1; pushEvent(t.owner,'completed “'+short(t.title,40)+'”'); }
+  });
+  state.workflow={ name:DEMO_PROJECT.name+' · '+DEMO_PROJECT.sprint, status:i>=DEMO_STEPS.length-1?'done':'running',
+    progress:Math.round((i+1)/DEMO_STEPS.length*100)/100, started:state.workflow&&state.workflow.started||Date.now() };
+  if(s.note) pushEvent('system',s.note);
+  state.demoStep++;
+  state.squad.forEach(a=>{ if(!units[a.id]) makeUnit(a); moveToStation(a); });
+  refreshAll();
+}
+
+/* ============================================================================
+   EVENTS + REPORT
+   ============================================================================ */
+function pushEvent(who,text){
+  if(who==='operator'&&state.mode==='live'&&!/(thinking|tool|coding|searching|writing|delegating|done|blocked)/i.test(text)) state.mode='sim';
+  state.events.unshift({at:Date.now(),who,text});
+  if(state.events.length>120) state.events.pop();
+}
+function reportMarkdown(){
+  const wf=state.workflow;
+  const L=[];
+  L.push('# '+(wf?wf.name:'Agent run')+' — Hermes Pixel Office export');
+  L.push('');
+  L.push('GENERATED: '+new Date().toISOString());
+  L.push('MODE: '+(state.mode==='live'?'live state endpoint ('+state.endpoint+')':'labelled simulation (no endpoint connected)'));
+  if(wf) L.push('WORKFLOW STATUS: '+wf.status+' — '+Math.round((wf.progress||0)*100)+'% complete');
+  L.push('');
+  L.push('## SQUAD');
+  L.push('');
+  L.push('| agent | role | status | tool | step | progress |');
+  L.push('|---|---|---|---|---|---|');
+  state.squad.forEach(a=>L.push('| '+a.name+' | '+a.role+' | '+(a.status||'idle')+' | '+(a.tool||'-')+' | '+(a.step||'-')+' | '+Math.round((a.progress||0)*100)+'% |'));
+  L.push('');
+  L.push('## TASK TREE');
+  L.push('');
+  const roots=state.tasks.filter(t=>!t.parent);
+  const kids=id=>state.tasks.filter(t=>t.parent===id);
+  const line=(t,d)=>{
+    L.push('  '.repeat(d)+'- ['+(t.status||'pending')+'] '+t.title+' — owner: '+(agentById(t.owner)?agentById(t.owner).name:(t.owner||'unassigned'))+' ('+Math.round((t.progress||0)*100)+'%)');
+    if(t.detail) L.push('  '.repeat(d+1)+'> '+t.detail);
+    kids(t.id).forEach(k=>line(k,d+1));
+  };
+  roots.forEach(t=>line(t,0));
+  L.push('');
+  L.push('## EVENT LOG (most recent first)');
+  L.push('');
+  state.events.slice(0,40).forEach(e=>L.push('- '+new Date(e.at).toTimeString().slice(0,8)+'  '+e.who+': '+e.text));
+  L.push('');
+  L.push('---');
+  L.push('Exported from Hermes Pixel Office. The floor only shows what the state document reported;');
+  L.push('with no endpoint connected, every line above comes from the built-in simulation.');
+  return L.join('\n');
+}
+function exportReport(){
+  const md=reportMarkdown();
+  const m=modalShell('EXPORT REPORT','Markdown for the run. Print to PDF if you need a document.');
+  const body=m.querySelector('.modal-body');
+  const pre=document.createElement('div'); pre.className='mtext'; pre.textContent=md;
+  body.appendChild(pre);
+  const acts=document.createElement('div'); acts.className='acts';
+  const cp=document.createElement('button'); cp.className='retro'; cp.textContent='COPY';
+  cp.addEventListener('click',()=>copyText(md,'Report copied'));
+  const dl=document.createElement('button'); dl.className='retro run'; dl.textContent='DOWNLOAD .MD';
+  dl.addEventListener('click',()=>{
+    try{
+      const blob=new Blob([md],{type:'text/markdown'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='hermes-pixel-office-report.md';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Downloaded report','good');
+    }catch(e){ toast('Download blocked — use COPY','bad'); }
+  });
+  const pr=document.createElement('button'); pr.className='retro'; pr.textContent='PRINT / PDF';
+  pr.addEventListener('click',()=>{
+    const w=window.open('','_blank');
+    if(!w){ toast('Popup blocked — use COPY','bad'); return; }
+    w.document.write('<pre style="font:13px ui-monospace,monospace;white-space:pre-wrap;padding:24px">'+esc(md)+'</pre>');
+    w.document.close(); w.print();
+  });
+  const cl=document.createElement('button'); cl.className='retro'; cl.textContent='CLOSE';
+  cl.addEventListener('click',closeModal);
+  acts.appendChild(cp); acts.appendChild(dl); acts.appendChild(pr); acts.appendChild(cl);
+  body.appendChild(acts);
+}
+function copyText(text,msg){
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(()=>toast(msg||'Copied','good'),()=>toast('Copy blocked — select manually','bad'));
+    else toast('Clipboard unavailable','bad');
+  }catch(e){ toast('Clipboard unavailable','bad'); }
+}
+
+/* ============================================================================
+   OVERLAY
+   ============================================================================ */
+function pctX(v){ return (v/RW*100)+'%'; }
+function pctY(v){ return (v/RH*100)+'%'; }
+function buildOverlay(){
+  const ov=$id('ov'); if(!ov) return;
+  ov.innerHTML='';
+  Object.keys(STATIONS).forEach(k=>{
+    const s=STATIONS[k];
+    const el=document.createElement('div');
+    el.className='zlabel';
+    el.style.left=pctX(8); el.style.top=pctY(s.y-46); el.style.color=s.color;
+    el.innerHTML='<s style="background:'+s.color+'"></s>'+s.name;
+    ov.appendChild(el);
+  });
+  const sign=document.createElement('div');
+  sign.className='banner';
+  sign.style.left=pctX(10); sign.style.top=pctY(WALL_H-10);
+  sign.textContent='HERMES PIXEL OFFICE · LIVE AGENT FLOOR';
+  ov.appendChild(sign);
+  refreshPlates();
+}
+function refreshPlates(){
+  const ov=$id('ov'); if(!ov) return;
+  Array.prototype.slice.call(ov.querySelectorAll('.tile')).forEach(t=>t.remove());
+  state.squad.forEach(a=>{
+    const u=units[a.id]; if(!u) return;
+    const t=document.createElement('div');
+    t.className='tile'+(state.selected===a.id?' on':'');
+    t.dataset.id=a.id;
+    t.style.left=pctX(u.x-28); t.style.top=pctY(u.y-56);
+    t.style.width=(56/RW*100)+'%'; t.style.height=(58/RH*100)+'%';
+    t.title=a.name+' — '+a.role+' · '+(a.status||'idle')+(a.tool?' · '+a.tool:'');
+    t.innerHTML='<div class="plate"><b>'+esc(a.name)+'</b><i>'+esc((a.status||'idle')+(a.tool?' · '+a.tool:''))+'</i></div>';
+    t.addEventListener('click',e=>{ e.stopPropagation(); selectAgent(a.id); });
+    ov.appendChild(t);
+  });
+}
+function selectAgent(id){
+  state.selected=id;
+  state.view='agent';
+  renderDossier(); renderView(); refreshPlates();
+  if(state.sound) blip();
+}
+function blip(){
+  try{
+    const A=new (window.AudioContext||window.webkitAudioContext)();
+    const o=A.createOscillator(), g=A.createGain();
+    o.type='square'; o.frequency.value=700; g.gain.value=.03;
+    o.connect(g); g.connect(A.destination); o.start();
+    o.frequency.setValueAtTime(1040,A.currentTime+.05);
+    o.stop(A.currentTime+.11);
+  }catch(e){}
+}
+
+/* ============================================================================
+   PANELS
+   ============================================================================ */
+function statusColor(s){
+  return ({ idle:'#4a5568', thinking:'#7fd3f0', tool:'#f2c14e', coding:'#3ad0a0',
+    searching:'#a06cd5', writing:'#f27ca8', delegating:'#e0825a', done:'#3ad0a0', blocked:'#e05c4b' })[s]||'#4a5568';
+}
+function renderDossier(){
+  const a=agentById(state.selected)||state.squad[0];
+  if(!a) return;
+  $id('nm').textContent=a.name;
+  $id('rl').textContent=a.role+' · '+(a.model||'model not reported');
+  $id('an').textContent='STATUS: '+(a.status||'idle').toUpperCase()+(a.step?' · STEP '+a.step:'')+(a.tool?' · TOOL '+a.tool:'');
+  $id('tag').textContent=a.task?('TASK: '+a.task):'No task reported for this agent right now.';
+  $id('divName').innerHTML='&#9656; SOUL.MD — '+esc(a.name);
+  $id('soul').textContent=a.soul||'(no SOUL.md reported)';
+
+  const bars=$id('bars'); bars.innerHTML='';
+  const rows=[['PROGRESS',Math.round((a.progress||0)*100),''],
+              ['SKILLS',Math.min(100,(a.skills||[]).length*22),'think'],
+              ['QUEUE LOAD',Math.min(100,state.tasks.filter(t=>t.owner===a.id&&t.status!=='done').length*25),''],
+              ['BLOCKED',a.status==='blocked'?100:0,'risk']];
+  rows.forEach(r=>{
+    const d=document.createElement('div'); d.className='bar';
+    d.innerHTML='<div class="lb"><span>'+r[0]+'</span><span>'+r[1]+' / 100</span></div>'+
+      '<div class="tr"><div class="fl '+r[2]+'" style="width:'+r[1]+'%"></div></div>';
+    bars.appendChild(d);
+  });
+
+  const log=$id('log'); log.innerHTML='';
+  const lines=[];
+  lines.push('> status : '+(a.status||'idle'));
+  lines.push('> tool : '+(a.tool||'—'));
+  lines.push('> step : '+(a.step||'—'));
+  lines.push('> skills : '+((a.skills||[]).join(', ')||'—'));
+  lines.push('> mode : '+(state.mode==='live'?'live endpoint':'labelled simulation'));
+  state.events.filter(e=>e.who===a.id).slice(0,3).forEach(e=>lines.push('> '+short(e.text,54)));
+  log.innerHTML=lines.map(l=>'<div>'+esc(l)+'</div>').join('');
+
+  const ava=$id('ava'), actx=ava.getContext('2d');
+  actx.imageSmoothingEnabled=false;
+  actx.fillStyle='#0d1320'; actx.fillRect(0,0,96,112);
+  actx.fillStyle='#141b2b'; actx.fillRect(0,0,96,8);
+  actx.fillStyle='#1a2234'; actx.fillRect(0,98,96,14);
+  const st=STATUS_TO_STATION[a.status]||'idle';
+  const pose=STATIONS[st]?STATIONS[st].pose:'idle';
+  actx.drawImage(spriteOf(a,pose,'s',(T>>3)%2),8,10,80,96);
+  actx.fillStyle=statusColor(a.status); actx.font='8px "Press Start 2P", monospace';
+  actx.fillText(a.role.slice(0,10),6,110);
+}
+function renderView(){
+  const t=$id('viewTitle'), b=$id('viewBody');
+  b.innerHTML='';
+  if(state.view==='agent'&&state.selected){ t.innerHTML='&#9656; AGENT ACTIVITY'; b.appendChild(activityPanel()); return; }
+  if(state.view==='events'){ t.innerHTML='&#9656; FULL EVENT LOG'; b.appendChild(eventPanel(40)); return; }
+  t.innerHTML='&#9656; LIVE ACTIVITY';
+  b.appendChild(activityPanel());
+}
+function activityPanel(){
+  const w=document.createElement('div');
+  w.className='log'; w.style.height='190px';
+  const rows=state.squad.slice().sort((a,b)=>(b.progress||0)-(a.progress||0));
+  rows.forEach(a=>{
+    const d=document.createElement('div');
+    const bar='['+'█'.repeat(Math.round((a.progress||0)*10)).padEnd(10,'·')+']';
+    d.textContent=bar+' '+a.name.padEnd(12).slice(0,12)+' '+(a.status||'idle').padEnd(11)+
+      (a.tool?(' '+a.tool):'')+(a.step?(' '+a.step):'');
+    d.style.color=statusColor(a.status);
+    w.appendChild(d);
+  });
+  const note=document.createElement('div');
+  note.className='law';
+  note.textContent=state.mode==='live'
+    ? 'Mirroring '+state.endpoint+' · last sync '+new Date(state.lastSync).toTimeString().slice(0,8)
+    : 'SIMULATION — no state endpoint connected. Every status below is generated locally, not reported by an agent. Connect one with CONNECT STATE.';
+  w.appendChild(note);
+  return w;
+}
+function eventPanel(n){
+  const w=document.createElement('div');
+  w.className='log'; w.style.height='240px';
+  if(!state.events.length) w.appendChild(Object.assign(document.createElement('div'),{textContent:'No events yet.'}));
+  state.events.slice(0,n).forEach(e=>{
+    const d=document.createElement('div');
+    d.textContent=new Date(e.at).toTimeString().slice(0,8)+'  '+e.who+': '+e.text;
+    w.appendChild(d);
+  });
+  return w;
+}
+/* ============================================================================
+   MISSION CONTROL — the delivery board: pipeline, metrics, burndown, artifacts
+   ============================================================================ */
+function pipelineCounts(){
+  const seen={};
+  state.squad.forEach(a=>{
+    const st=STATUS_TO_STATION[a.status];
+    if(!st||st==='idle') return;
+    seen[st]=(seen[st]||0)+1;
+  });
+  return seen;
+}
+function renderPipeline(){
+  const w=$id('mcPipeline'); if(!w) return;
+  w.className='pipe';
+  w.innerHTML='';
+  const counts=pipelineCounts();
+  PIPELINE.forEach((step,i)=>{
+    const here=counts[step.key]||0;
+    const el=document.createElement('div');
+    el.className='pstep'+(here?' active':'');
+    /* a stage counts as done when the whole squad has moved past it */
+    const later=PIPELINE.slice(i+1).reduce((s,k)=>s+(counts[k.key]||0),0);
+    if(!here&&later>0) el.className='pstep done';
+    const pct=here?Math.round(state.squad.filter(a=>STATUS_TO_STATION[a.status]===step.key)
+      .reduce((s,a)=>s+(a.progress||0),0)/here*100):(el.className.indexOf('done')!==-1?100:0);
+    el.innerHTML='<span class="pl">'+String(i+1).padStart(2,'0')+' '+esc(step.label)+'</span>'+
+      '<span class="pw">'+esc(step.who)+'</span>'+
+      '<div class="pb"><i style="width:'+pct+'%;background:'+step.color+'"></i></div>'+
+      '<span class="pn">'+(here?here+' agent'+(here>1?'s':''):'clear')+'</span>';
+    w.appendChild(el);
+  });
+}
+function renderMetrics(){
+  const w=$id('mcMetrics'); if(!w) return;
+  w.innerHTML='';
+  const m=state.metrics||{};
+  const derived={
+    tests:m.tests!=null?m.tests:(state.artifacts.filter(a=>a.kind==='test').length||null),
+    bugs:m.bugs!=null?m.bugs:null,
+    files:m.files!=null?m.files:(state.artifacts.length||null),
+    coverage:m.coverage!=null?m.coverage:null
+  };
+  const tiles=[
+    ['FILES',derived.files],
+    ['TESTS PASSED',derived.tests],
+    ['BUGS OPEN',derived.bugs],
+    ['COVERAGE',derived.coverage!=null?derived.coverage+'%':null]
+  ];
+  tiles.forEach(t=>{
+    const d=document.createElement('div');
+    const known=t[1]!==null&&t[1]!==undefined;
+    d.className='mtile'+(known&&/BUG/i.test(t[0])&&Number(t[1])>0?' bad':(known?' good':''));
+    d.innerHTML='<b>'+(known?esc(String(t[1])):'—')+'</b><span>'+t[0]+'</span>';
+    w.appendChild(d);
+  });
+}
+function renderBurn(){
+  const w=$id('mcBurn'); if(!w) return;
+  w.innerHTML='';
+  const cv=document.createElement('canvas');
+  cv.id='burn'; cv.width=300; cv.height=70;
+  w.appendChild(cv);
+  const g=cv.getContext('2d');
+  g.imageSmoothingEnabled=false;
+  g.fillStyle='#0d1320'; g.fillRect(0,0,300,70);
+  const h=state.history;
+  const cap=document.createElement('div');
+  cap.className='note';
+  if(h.length<2){
+    cap.textContent='BURNDOWN — needs two samples. It plots tasks remaining against the run.';
+    w.appendChild(cap);
+    return;
+  }
+  const max=Math.max.apply(null,h.map(p=>p.remaining))||1;
+  g.strokeStyle='#28324a';
+  for(let i=0;i<=4;i++) g.fillRect(0,Math.round(17*i),300,1);
+  const pts=h.map((p,i)=>({ x:Math.round(i/(h.length-1)*(298))+1, y:69-Math.round(p.remaining/max*64) }));
+  g.fillStyle='#3ad0a0';
+  pts.forEach(p=>g.fillRect(p.x,p.y,2,2));
+  g.strokeStyle='#2b6e58';
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1], b=pts[i];
+    const steps=Math.max(1,Math.abs(b.x-a.x));
+    for(let s=0;s<steps;s++){
+      const t=s/steps;
+      g.fillRect(Math.round(a.x+(b.x-a.x)*t), Math.round(a.y+(b.y-a.y)*t),1,1);
+    }
+  }
+  const last=h[h.length-1];
+  cap.textContent='BURNDOWN — '+last.remaining+' task'+(last.remaining===1?'':'s')+' remaining · '+
+    last.done+'/'+last.total+' done · '+h.length+' samples';
+  w.appendChild(cap);
+}
+function renderArtifacts(){
+  const w=$id('mcArtifacts'); if(!w) return;
+  w.innerHTML='';
+  const head=document.createElement('div');
+  head.className='sec';
+  head.textContent='▸ ARTIFACTS';
+  w.appendChild(head);
+  if(!state.artifacts.length){
+    w.appendChild(Object.assign(document.createElement('div'),{className:'empty',textContent:'No artifacts reported. Include an "artifacts" array in the state document to track files, tests and builds.'}));
+    return;
+  }
+  const t=document.createElement('table');
+  t.className='art';
+  t.innerHTML='<tr><th>ARTIFACT</th><th>KIND</th><th>OWNER</th><th>STATE</th></tr>';
+  state.artifacts.forEach(a=>{
+    const tr=document.createElement('tr');
+    const owner=agentById(a.owner);
+    tr.innerHTML='<td>'+esc(a.path)+(a.lines?' <span style="color:#6b7a80">'+a.lines+'L</span>':'')+'</td>'+
+      '<td>'+esc(a.kind)+'</td><td>'+esc(owner?owner.name:(a.owner||'—'))+'</td>'+
+      '<td><span class="artst '+(a.status==='failed'?'failed':(a.status==='running'?'running':'done'))+'">'+esc(a.status)+
+      (a.tests?' '+esc(a.tests):'')+'</span></td>';
+    t.appendChild(tr);
+  });
+  w.appendChild(t);
+}
+function sampleHistory(){
+  const total=state.tasks.length;
+  const done=state.tasks.filter(t=>t.status==='done').length;
+  const remaining=total-done;
+  const last=state.history[state.history.length-1];
+  if(!last||last.remaining!==remaining||last.done!==done||last.total!==total)
+    state.history.push({ at:Date.now()+(state.history.length), total, done, remaining });
+  if(state.history.length>60) state.history.shift();
+}
+function renderMissionControl(){
+  if(!$id('mcPipeline')) return;          /* mission control markup not present */
+  const mcProject=$id('mcProject');
+  if(mcProject) mcProject.textContent=state.project
+    ? (state.project.name+(state.project.sprint?' · '+state.project.sprint:'')+(state.project.stage?' · '+state.project.stage:''))
+    : (state.workflow?state.workflow.name:'');
+  renderPipeline(); renderMetrics(); renderBurn(); renderArtifacts();
+}
+
+function renderChips(){
+  const active=activeAgents().length;
+  const f=$id('cFeed');
+  if(f){
+    f.textContent='STATE: '+(state.mode==='live'?'LIVE':(state.syncError?'SIM (no endpoint)':'SIMULATION'));
+    f.className='chip'+(state.mode==='live'?' live':(state.syncError?' bad':' sim'));
+  }
+  $id('cEndpoint').textContent=state.endpoint;
+  $id('cSquad').textContent='SQUAD '+state.squad.length;
+  $id('cActive').textContent='ACTIVE '+active;
+  const wf=$id('cWf');
+  if(wf) wf.textContent=state.workflow?('WORKFLOW '+state.workflow.status.toUpperCase()+' '+Math.round((state.workflow.progress||0)*100)+'%'):'WORKFLOW —';
+  const sc=$id('squadCount'); if(sc) sc.textContent=state.squad.length+' AGENTS';
+  const wc=$id('wfCount'); if(wc) wc.textContent=state.workflow?state.workflow.status.toUpperCase():'NONE';
+  const sub=$id('hdrSub');
+  if(sub) sub.textContent=(state.mode==='live'?'LIVE FROM '+state.endpoint:'LABELLED SIMULATION')+' · '+state.squad.length+' AGENTS · '+active+' WORKING';
+}
+function renderCrew(){
+  const w=$id('crewList'); if(!w) return;
+  w.innerHTML='';
+  state.squad.forEach(a=>{
+    const row=document.createElement('div');
+    row.className='crew';
+    row.innerHTML='<span class="dot" style="background:'+statusColor(a.status)+'"></span>'+
+      '<div class="w"><span class="n">'+esc(a.name)+'</span>'+
+      '<span class="r">'+esc(a.role)+(a.model?' · '+esc(a.model):'')+'</span>'+
+      '<span class="st">'+esc(a.status||'idle')+(a.tool?' · '+esc(a.tool):'')+(a.step?' · '+esc(a.step):'')+'</span></div>';
+    row.addEventListener('click',()=>selectAgent(a.id));
+    w.appendChild(row);
+  });
+}
+function renderWorkflow(){
+  const w=$id('wfList'); if(!w) return;
+  w.innerHTML='';
+  if(!state.workflow&&!state.tasks.length){
+    w.appendChild(Object.assign(document.createElement('div'),{className:'empty',textContent:'No workflow reported. Connect a state endpoint or run the demo.'}));
+    return;
+  }
+  if(state.workflow){
+    const head=document.createElement('div');
+    head.className='kv';
+    head.innerHTML='<span>'+esc(state.workflow.name)+'</span><b>'+Math.round((state.workflow.progress||0)*100)+'%</b>';
+    w.appendChild(head);
+    const bar=document.createElement('div'); bar.className='bar2';
+    bar.innerHTML='<i style="width:'+Math.round((state.workflow.progress||0)*100)+'%"></i>';
+    w.appendChild(bar);
+  }
+  const roots=state.tasks.filter(t=>!t.parent);
+  const kids=id=>state.tasks.filter(t=>t.parent===id);
+  const draw=(t,depth)=>{
+    const box=document.createElement('div');
+    box.className='task '+(t.status==='done'?'done':(t.status==='blocked'?'blocked':'running'));
+    box.style.marginLeft=(depth*10)+'px';
+    const owner=agentById(t.owner);
+    box.innerHTML='<div class="th"><span class="tn">'+esc(short(t.title,44))+'</span>'+
+      '<span style="color:'+statusColor(owner?owner.status:'idle')+'">'+esc(t.status)+'</span></div>'+
+      '<div class="tm">owner: '+esc(owner?owner.name:(t.owner||'unassigned'))+' · '+Math.round((t.progress||0)*100)+'%'+
+      (t.detail?'<br>'+esc(short(t.detail,70)):'')+'</div>'+
+      '<div class="bar2"><i style="width:'+Math.round((t.progress||0)*100)+'%"></i></div>';
+    w.appendChild(box);
+    kids(t.id).forEach(k=>draw(k,depth+1));
+  };
+  roots.forEach(t=>draw(t,0));
+}
+function renderEvents(){
+  const w=$id('eventList'); if(!w) return;
+  w.innerHTML='';
+  if(!state.events.length) w.appendChild(Object.assign(document.createElement('div'),{className:'empty',textContent:'Nothing yet.'}));
+  state.events.slice(0,12).forEach(e=>{
+    const d=document.createElement('div');
+    d.className='kv';
+    d.innerHTML='<span>'+esc(e.who)+' '+esc(short(e.text,40))+'</span><b>'+new Date(e.at).toTimeString().slice(0,5)+'</b>';
+    w.appendChild(d);
+  });
+}
+function refreshAll(){ sampleHistory(); renderChips(); renderCrew(); renderWorkflow(); renderEvents(); renderMissionControl(); renderView(); }
+function toast(msg,kind){
+  const host=$id('toasts'); if(!host) return;
+  const t=document.createElement('div');
+  t.className='toast'+(kind?' '+kind:'');
+  t.textContent=msg;
+  host.appendChild(t);
+  if(host.children.length>5) host.removeChild(host.children[0]);
+  setTimeout(()=>t.remove(),4400);
+}
+
+/* ============================================================================
+   MODALS + CONTROLS
+   ============================================================================ */
+function modalShell(title,sub){
+  const root=$id('modalRoot');
+  root.innerHTML='';
+  const back=document.createElement('div'); back.className='backdrop';
+  const m=document.createElement('div'); m.className='modal';
+  m.innerHTML='<h3>'+title+'</h3>'+(sub?'<div class="note" style="margin:0 0 9px;">'+sub+'</div>':'')+'<div class="modal-body"></div>';
+  back.appendChild(m);
+  back.addEventListener('click',e=>{ if(e.target===back) closeModal(); });
+  root.appendChild(back);
+  return m;
+}
+function closeModal(){ $id('modalRoot').innerHTML=''; }
+/* ============================================================================
+   CHARACTER GALLERY + BUILDER — the cast, and mix-and-match live
+   ============================================================================ */
+function openGallery(){
+  const m=modalShell('THE CAST — '+CAST.length+' CHARACTERS','Every character is assembled from shared parts. Click one to open the builder and mix your own.');
+  const body=m.querySelector('.modal-body');
+  const grid=document.createElement('div'); grid.className='castgrid';
+  CAST.forEach(ch=>{
+    const c=document.createElement('div'); c.className='castc';
+    const cv=document.createElement('canvas'); cv.width=40; cv.height=48;
+    const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+    g.drawImage(spriteOf(Object.assign({},ch,{id:'g_'+ch.id}),'idle','s',(ch.id.charCodeAt(0)%2)),0,0,40,48);
+    c.appendChild(cv);
+    const n=document.createElement('div'); n.className='cn'; n.textContent=ch.name;
+    const t=document.createElement('div'); t.className='ct'; t.textContent=ch.tag||'';
+    c.appendChild(n); c.appendChild(t);
+    c.addEventListener('click',()=>{ closeModal(); openBuilder(ch); });
+    grid.appendChild(c);
+  });
+  body.appendChild(grid);
+  const acts=document.createElement('div'); acts.className='acts';
+  const cl=document.createElement('button'); cl.className='retro'; cl.textContent='CLOSE';
+  cl.addEventListener('click',closeModal); acts.appendChild(cl); body.appendChild(acts);
+}
+function openBuilder(base){
+  const cur=Object.assign({},base,{id:'b_'+base.id});
+  const m=modalShell('CHARACTER BUILDER — '+esc(base.name),'Mix parts from the shared library. Changes preview live.');
+  const body=m.querySelector('.modal-body');
+  const prev=document.createElement('div'); prev.className='buildprev';
+  const pv=document.createElement('canvas'); pv.width=40; pv.height=48;
+  prev.appendChild(pv);
+  const info=document.createElement('div');
+  info.style.cssText='font-size:6px;color:var(--dim);line-height:2;min-width:150px;';
+  const redraw=()=>{
+    const g=pv.getContext('2d'); g.imageSmoothingEnabled=false;
+    g.clearRect(0,0,40,48);
+    g.drawImage(spriteOf(cur,'idle','s',(T>>3)%2),0,0,40,48);
+    info.innerHTML='<b style="color:#dff3e6">'+esc(cur.name||base.name)+'</b><br>'+
+      ['style:'+(cur.style||[]).join('+'),'hair:'+(cur.hair||'-'),'eyes:'+(cur.eyes||'-'),
+       'outfit:'+(cur.outfit||'-'),'mask:'+(cur.mask||'none'),'weapon:'+(cur.weapon||'none'),
+       'big:'+(cur.big?'yes':'no')].join('<br>');
+  };
+  const row=(label,builder)=>{
+    const r=document.createElement('div'); r.className='buildrow';
+    const l=document.createElement('span'); l.className='brl'; l.textContent=label;
+    r.appendChild(l); builder(r); return r;
+  };
+  body.appendChild(prev);
+  prev.appendChild(info);
+  body.appendChild(row('HAIR', r=>{
+    HAIR_CHOICES.forEach(pair=>{
+      const b=document.createElement('button');
+      b.textContent=pair[0];
+      b.classList.toggle('on',(cur.style||[]).indexOf(pair[0])!==-1);
+      b.addEventListener('click',()=>{ cur.style=[pair[0]]; cur.hair=pair[1]; cur.coverEye=null; cur.mask=null; redraw(); refreshBuilderRows(); });
+      r.appendChild(b);
+    });
+  }));
+  body.appendChild(row('HAIR COLOR', r=>{
+    HAIR_COLORS.forEach(c=>{
+      const b=document.createElement('button'); b.className='swatch'+(cur.hair===c?' on':'');
+      b.style.background=c;
+      b.title=c;
+      b.addEventListener('click',()=>{ cur.hair=c; redraw(); refreshBuilderRows(); });
+      r.appendChild(b);
+    });
+  }));
+  body.appendChild(row('OUTFIT', r=>{
+    OUTFIT_COLORS.forEach(c=>{
+      const b=document.createElement('button'); b.className='swatch'+(cur.outfit===c?' on':'');
+      b.style.background=c;
+      b.title=c;
+      b.addEventListener('click',()=>{ cur.outfit=c; redraw(); refreshBuilderRows(); });
+      r.appendChild(b);
+    });
+  }));
+  body.appendChild(row('MASK', r=>{
+    MASK_CHOICES.forEach(pair=>{
+      const b=document.createElement('button');
+      b.textContent=pair[0];
+      b.classList.toggle('on',(cur.mask||'none')===pair[1]);
+      b.addEventListener('click',()=>{ cur.mask=pair[1]==='none'?null:pair[1]; redraw(); refreshBuilderRows(); });
+      r.appendChild(b);
+    });
+  }));
+  body.appendChild(row('WEAPON', r=>{
+    WEAPON_CHOICES.forEach(pair=>{
+      const b=document.createElement('button');
+      b.textContent=pair[0];
+      b.classList.toggle('on',(cur.weapon||'none')===pair[1]);
+      b.addEventListener('click',()=>{ cur.weapon=pair[1]==='none'?null:pair[1]; redraw(); refreshBuilderRows(); });
+      r.appendChild(b);
+    });
+  }));
+  body.appendChild(row('BUILD', r=>{
+    const b=document.createElement('button');
+    b.textContent='BIG: '+(cur.big?'ON':'OFF');
+    b.classList.toggle('on',!!cur.big);
+    b.addEventListener('click',()=>{ cur.big=!cur.big; b.textContent='BIG: '+(cur.big?'ON':'OFF'); redraw(); });
+    r.appendChild(b);
+  }));
+  function refreshBuilderRows(){
+    /* re-sync every control with the current parts */
+    Array.prototype.slice.call(m.querySelectorAll('.buildrow')).forEach(r=>{
+      const label=r.querySelector('.brl').textContent;
+      if(label==='HAIR'){
+        r.querySelectorAll('button').forEach(b=>{
+          b.classList.toggle('on',(cur.style||[]).indexOf(b.textContent)!==-1);
+        });
+      }else if(label==='HAIR COLOR'){
+        r.querySelectorAll('button').forEach(b=>{
+          b.classList.toggle('on',cur.hair===b.style.background);
+        });
+      }else if(label==='OUTFIT'){
+        r.querySelectorAll('button').forEach(b=>{
+          b.classList.toggle('on',cur.outfit===b.style.background);
+        });
+      }else if(label==='MASK'){
+        r.querySelectorAll('button').forEach(b=>{
+          b.classList.toggle('on',(cur.mask||'none')===b.textContent);
+        });
+      }else if(label==='WEAPON'){
+        r.querySelectorAll('button').forEach(b=>{
+          b.classList.toggle('on',(cur.weapon||'none')===b.textContent);
+        });
+      }
+    });
+  }
+  redraw();
+  const acts=document.createElement('div'); acts.className='acts';
+  const ok=document.createElement('button'); ok.className='retro run'; ok.textContent='ADD TO FLOOR';
+  ok.addEventListener('click',()=>{
+    const fresh=Object.assign({},cur,{id:('cast_'+base.id+'_'+(Math.random()*1e5|0)), name:(base.name+'+')});
+    state.squad.push(Object.assign(fresh,{role:'CUSTOM',model:'parts',skills:[],soul:'# SOUL.md — CUSTOM\n\nBuilt from the parts library: '+(fresh.style||[]).join('+')+' hair, '+(fresh.mask||'no mask')+', '+(fresh.weapon||'no weapon')+'.',status:'idle',progress:0,tool:'',step:'',task:''}));
+    makeUnit(state.squad[state.squad.length-1]);
+    buildOverlay(); refreshAll();
+    closeModal();
+    toast(base.name+' variant joined the floor','good');
+  });
+  acts.appendChild(ok);
+  const cl=document.createElement('button'); cl.className='retro'; cl.textContent='CLOSE';
+  cl.addEventListener('click',closeModal); acts.appendChild(cl); body.appendChild(acts);
+}
+
+function openConnect(){
+  const m=modalShell('CONNECT STATE ENDPOINT','Point the floor at a JSON state document. It polls every 2 seconds.');
+  const body=m.querySelector('.modal-body');
+  const iw=document.createElement('div');
+  iw.innerHTML='<div class="sec">STATE URL</div>';
+  const inp=document.createElement('input'); inp.type='text'; inp.value=state.endpoint;
+  iw.appendChild(inp); body.appendChild(iw);
+  const schema=document.createElement('div'); schema.className='mtext'; schema.style.marginTop='10px';
+  schema.textContent=JSON.stringify({
+    workflow:{ name:'Industry 5.0 study', status:'running', progress:0.4 },
+    tasks:[{ id:'t1', title:'Source primary material', owner:'narada', status:'running', progress:0.5, parent:null, detail:'with links and dates' }],
+    agents:[{ id:'aegis', status:'thinking', task:'Decompose the objective', tool:'delegate_task', progress:0.3, step:'3/8',
+      log:['split into four parallel workstreams'] }]
+  },null,2);
+  body.appendChild(Object.assign(document.createElement('div'),{className:'sec',textContent:'EXPECTED SHAPE'}));
+  body.appendChild(schema);
+  const note=document.createElement('div'); note.className='law';
+  note.textContent='Notes: agent ids must match the squad below. status accepts idle, thinking, tool, coding, searching, writing, delegating, done, blocked — common synonyms (reasoning, tool_use, web_search, route, complete, failed) are mapped for you. If the endpoint is unreachable the floor drops to the labelled simulation and says so.';
+  body.appendChild(note);
+  const acts=document.createElement('div'); acts.className='acts';
+  const go=document.createElement('button'); go.className='retro run'; go.textContent='CONNECT';
+  go.addEventListener('click',async()=>{
+    state.endpoint=inp.value.trim()||state.endpoint;
+    if(state.timer){ clearInterval(state.timer); state.timer=null; }
+    const ok=await connectState(false);
+    if(!ok) startSim();
+    closeModal(); refreshAll();
+  });
+  const sim=document.createElement('button'); sim.className='retro warn'; sim.textContent='USE SIMULATION';
+  sim.addEventListener('click',()=>{ state.mode='sim'; state.syncError=''; if(state.timer)clearInterval(state.timer); startSim(); closeModal(); refreshAll(); toast('Simulation running (labelled)'); });
+  const cl=document.createElement('button'); cl.className='retro'; cl.textContent='CLOSE'; cl.addEventListener('click',closeModal);
+  acts.appendChild(sim); acts.appendChild(go); acts.appendChild(cl);
+  body.appendChild(acts);
+}
+function openDelegate(){
+  const m=modalShell('DELEGATE A TASK','Adds a task to the workflow tree and hands it to an agent — the same shape a delegate_task call produces.');
+  const body=m.querySelector('.modal-body');
+  const tw=document.createElement('div'); tw.innerHTML='<div class="sec">DELIVERABLE</div>';
+  const ti=document.createElement('input'); ti.type='text'; ti.placeholder='e.g. Source three primary references on Industry 5.0';
+  tw.appendChild(ti); body.appendChild(tw);
+  const dw=document.createElement('div'); dw.style.marginTop='9px';
+  dw.innerHTML='<div class="sec">NOTE (OPTIONAL)</div>';
+  const di=document.createElement('input'); di.type='text'; di.placeholder='constraints, deadline, format';
+  dw.appendChild(di); body.appendChild(dw);
+  const aw=document.createElement('div'); aw.style.marginTop='9px';
+  aw.innerHTML='<div class="sec">OWNER</div>';
+  const sel=document.createElement('select');
+  state.squad.forEach(a=>{
+    const o=document.createElement('option'); o.value=a.id; o.textContent=a.name+' — '+a.role;
+    if(state.selected&&a.id===state.selected) o.selected=true;
+    sel.appendChild(o);
+  });
+  aw.appendChild(sel); body.appendChild(aw);
+  const acts=document.createElement('div'); acts.className='acts';
+  const go=document.createElement('button'); go.className='retro run'; go.textContent='DELEGATE';
+  go.addEventListener('click',()=>{
+    const title=ti.value.trim();
+    if(!title){ ti.focus(); toast('Give the task a deliverable','bad'); return; }
+    const a=agentById(sel.value);
+    state.tasks.push({ id:'t'+(state.tasks.length+1)+'_'+(Math.random()*1e4|0), title,
+      owner:sel.value, status:'running', progress:0, parent:null, detail:di.value.trim() });
+    if(a){
+      a.task=title; a.status='delegating'; a.tool='delegate_task';
+      if(!units[a.id]) makeUnit(a);
+      moveToStation(a);
+    }
+    pushEvent('operator','delegated “'+short(title,44)+'” to '+(a?a.name:sel.value));
+    if(!state.workflow) state.workflow={ name:'operator queue', status:'running', progress:0, started:Date.now() };
+    closeModal(); refreshAll(); refreshPlates();
+    toast('Delegated to '+(a?a.name:'agent'),'good');
+  });
+  const cl=document.createElement('button'); cl.className='retro'; cl.textContent='CANCEL'; cl.addEventListener('click',closeModal);
+  acts.appendChild(cl); acts.appendChild(go); body.appendChild(acts);
+}
+function wire(){
+  $id('bConnect').addEventListener('click',openConnect);
+  $id('bDelegate').addEventListener('click',openDelegate);
+  $id('bExport').addEventListener('click',exportReport);
+  $id('bCast').addEventListener('click',openGallery);
+  $id('bDemo').addEventListener('click',()=>{
+    state.mode='sim'; state.demoStep=0; state.tasks=DEMO_TASKS.map(t=>Object.assign({},t));
+    state.events=[]; state.workflow=null;
+    state.squad.forEach(a=>{ a.progress=0; a.status='idle'; a.tool=''; a.step=''; a.task=''; });
+    if(state.timer) clearInterval(state.timer);
+    startSim();
+    toast('Demo workflow started (labelled simulation)','good');
+  });
+  $id('bReset').addEventListener('click',()=>{
+    const m=modalShell('RESET THE FLOOR?','Clears tasks and events and returns the squad to idle.');
+    const body=m.querySelector('.modal-body');
+    const acts=document.createElement('div'); acts.className='acts';
+    const no=document.createElement('button'); no.className='retro'; no.textContent='CANCEL'; no.addEventListener('click',closeModal);
+    const yes=document.createElement('button'); yes.className='retro warn'; yes.textContent='RESET';
+    yes.addEventListener('click',()=>{
+      if(state.timer) clearInterval(state.timer);
+      state.tasks=[]; state.events=[]; state.workflow=null; state.demoStep=0;
+      state.squad.forEach(a=>{ a.status='idle'; a.progress=0; a.tool=''; a.step=''; a.task=''; });
+      Object.keys(units).forEach(k=>delete units[k]);
+      state.squad.forEach(makeUnit);
+      closeModal(); buildOverlay(); refreshAll();
+      toast('Floor reset','good');
+    });
+    acts.appendChild(no); acts.appendChild(yes); body.appendChild(acts);
+  });
+  $id('bDay').addEventListener('click',()=>{ state.night=false; $id('bDay').classList.add('on'); $id('bNight').classList.remove('on'); });
+  $id('bNight').addEventListener('click',()=>{ state.night=true; $id('bNight').classList.add('on'); $id('bDay').classList.remove('on'); });
+  $id('bScan').addEventListener('click',()=>{
+    state.scan=!state.scan;
+    $id('scan').classList.toggle('on',state.scan);
+    $id('bScan').classList.toggle('on',state.scan);
+  });
+  $id('bSfx').addEventListener('click',()=>{
+    state.sound=!state.sound;
+    const b=$id('bSfx');
+    b.textContent='SFX : '+(state.sound?'ON':'OFF');
+    b.classList.toggle('on',state.sound);
+    if(state.sound) blip();
+  });
+  $id('office').addEventListener('click',e=>{
+    const cv=$id('office'), rect=cv.getBoundingClientRect();
+    if(!rect.width) return;
+    const x=(e.clientX-rect.left)/rect.width*RW, y=(e.clientY-rect.top)/rect.height*RH;
+    /* nearest agent within reach */
+    let best=null,bd=999;
+    state.squad.forEach(a=>{
+      const u=units[a.id]; if(!u) return;
+      const d=Math.hypot(u.x-x,u.y-y);
+      if(d<bd){ bd=d; best=a; }
+    });
+    if(best&&bd<70){ selectAgent(best.id); return; }
+    /* otherwise: the station nearest the click gets an agent sent to it */
+    let st=null,sd=999;
+    Object.keys(STATIONS).forEach(k=>{
+      const s=STATIONS[k], d=Math.hypot(s.x-x,s.y-y);
+      if(d<sd){ sd=d; st=k; }
+    });
+    const free=state.squad.filter(a=>!units[a.id]||!units[a.id].walking);
+    if(!st||!free.length) return;
+    const a=pick(free);
+    a.status=a.status==='idle'?(Object.keys(STATUS_TO_STATION).filter(s=>STATUS_TO_STATION[s]===st)[0]||'idle'):a.status;
+    const spots=stationSpots(st), p=freeSpot(spots[0][0],spots[0][1],units[a.id]);
+    goTo(a.id,p.x,p.y);
+    if(state.sound) blip();
+  });
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){ closeModal(); return; }
+    const tag=(e.target.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea'||tag==='select') return;
+    const k=e.key.toLowerCase();
+    if(k==='c') openConnect();
+    else if(k==='d') openDelegate();
+    else if(k==='e') exportReport();
+    else if(k==='t') openGallery();
+    else if(k==='r') $id('bDemo').click();
+    else if(k==='n') $id('bNight').click();
+    else if(k==='g') $id('bDay').click();
+  });
+}
+
+/* ============================================================================
+   LOOP + BOOT
+   ============================================================================ */
+function loopStep(ts){
+  rafId=requestAnimationFrame(loopStep);
+  if(ts-lastRaf<78) return;
+  const dt=Math.min(.2,(ts-lastRaf)/1000)*1.5;
+  lastRaf=ts; T++;
+  updateUnits(dt);
+  drawRoom();
+  if(T%20===0) refreshPlates();
+  if(T%40===0) renderDossier();
+}
+let pollTimer=null;
+(function init(){
+  state.squad=DEFAULT_SQUAD.map(a=>Object.assign({},a,{status:'idle',progress:0,tool:'',step:'',task:''}));
+  state.selected=state.squad[0].id;
+  state.tasks=DEMO_TASKS.map(t=>Object.assign({},t,{progress:0,status:'pending'}));
+  state.squad.forEach(makeUnit);
+  buildOverlay();
+  wire();
+  refreshAll(); renderDossier();
+  rafId=requestAnimationFrame(loopStep);
+  /* try the endpoint once; fall back to the labelled simulation either way */
+  connectState(true).then(ok=>{ if(!ok) startSim(); });
+  pollTimer=setInterval(()=>{ if(state.mode==='live') pollState(); },2000);
+  toast('Pixel office online. Connect a state endpoint, or watch the labelled simulation.','good');
+})();
+
+/* handle for checks */
+window.__HERMES__={ state, STATIONS, STATUS_TO_STATION, STATION_SPOTS, DEFAULT_SQUAD, DEMO_STEPS, DEMO_TASKS,
+  normStatus, applyState, pollState, connectState, startSim, simStep, moveToStation, assignSeat, makeUnit,
+  goTo, reportMarkdown, exportReport, refreshAll, refreshPlates, renderDossier, renderWorkflow, renderCrew,
+  renderChips, buildOverlay, selectAgent, drawRoom, updateUnits, loopStep, pushEvent, openDelegate, openConnect,
+  agentById, activeAgents, statusColor, makeAgentFromState,
+  renderMissionControl, renderPipeline, renderMetrics, renderBurn, renderArtifacts, sampleHistory, PIPELINE, stopSim,
+  CAST, HAIR_CHOICES, HAIR_COLORS, OUTFIT_COLORS, MASK_CHOICES, WEAPON_CHOICES, openGallery, openBuilder, withParts, spriteOf, RW, RH, WALL_H, SPRITE_W, SPRITE_H,
+  rate:{ normStatus, statusColor } };
+</script>
+</body>
+</html>
