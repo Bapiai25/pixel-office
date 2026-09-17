@@ -8,3 +8,6 @@ worker-log.jsonl
 
 # local deploy artifact
 .netlify-site
+
+# internal agent instructions — never publish
+AGENTS.md
