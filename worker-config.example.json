@@ -1,0 +1,44 @@
+{
+  "telegram": {
+    "token": "",
+    "chat_id": "",
+    "enabled": false
+  },
+  "llm": {
+    "provider": "pollinations",
+    "api_key": "",
+    "model": ""
+  },
+  "interval_seconds": 300,
+  "symbols": [
+    "BTC",
+    "ETH",
+    "SOL"
+  ],
+  "rotation": [
+    {
+      "desk": "Market Intelligence",
+      "ask": "Scan the tape: what changed in the tracked set and what is the regime?"
+    },
+    {
+      "desk": "Technical",
+      "ask": "Where is structure breaking or holding in the tracked set?"
+    },
+    {
+      "desk": "Portfolio Risk",
+      "ask": "What is the biggest risk in the majors right now, stated plainly?"
+    },
+    {
+      "desk": "Narrative",
+      "ask": "What are the trending pools telling us, and what would make it overheated?"
+    },
+    {
+      "desk": "On-chain",
+      "ask": "What do BTC mempool conditions say about network demand right now?"
+    },
+    {
+      "desk": "Market Intelligence",
+      "ask": "Summarise breadth and sentiment, and name the single biggest uncertainty."
+    }
+  ]
+}

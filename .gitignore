@@ -1,3 +1,7 @@
 .DS_Store
 *.log
 previews/*.bmp
+
+# local-only: may hold your Telegram token / API keys and runtime logs
+worker-config.json
+worker-log.jsonl
