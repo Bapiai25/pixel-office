@@ -11,3 +11,11 @@ worker-log.jsonl
 
 # internal agent instructions — never publish
 AGENTS.md
+
+# Local Netlify folder
+.netlify
+
+# local deps / netlify cli state
+node_modules/
+.netlify/
+package-lock.json

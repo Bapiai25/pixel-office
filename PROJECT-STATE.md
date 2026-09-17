@@ -8,6 +8,14 @@
 
 Two reviews were shared (a ChatGPT share link and a pasted security/architecture note). Outcome:
 
+**Backend added (the thing I had argued was unnecessary — it wasn't)**
+`netlify/functions/`: `health` · `llm` (server-side AI, owner key, per-IP rate limited) · `feed`
+(scheduled research visible to every visitor) · `research` (hourly autonomous cycle → Telegram +
+storage) · `research-now` (token-guarded manual trigger). Verified live: `/api/health` and `/api/feed`
+respond on the production URL, a real research cycle ran end-to-end (`stored:true`) and appeared in
+the feed seconds later. With **no env vars** the app behaves exactly as before (BYOK/free), so the
+backend is opt-in and cannot break the product. Tests: 11 function checks + 9 client checks.
+
 **Fixed — real issues they correctly flagged**
 - **XSS in the ticker** (genuine, key-stealing): user-typed task titles and alert text were interpolated
   into `rail.innerHTML` unescaped. A payload like `<img src=x onerror="…localStorage…">` would have run
@@ -90,7 +98,7 @@ ships `worker-config.example.json` instead. Never commit the real one: the repo 
 
 Host: **Netlify** (free plan; the site name and account are in the Netlify dashboard).
 Verified live: all routes 200, security headers applied, and the downloaded production
-HTML passes the full suite (**121/121**).
+HTML passes the full suite (**142/142**).
 
 ### New in this round (production customisations)
 

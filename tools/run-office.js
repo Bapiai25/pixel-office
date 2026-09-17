@@ -7,7 +7,8 @@ const js=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const sb={ window:D.windowObj, document:D.document, fetch:D.fakeFetch,
   requestAnimationFrame:D.fakeRaf, cancelAnimationFrame(){},
   setInterval:D.fakeSetInterval, clearInterval:D.fakeClearInterval,
-  setTimeout:D.fakeSetTimeout, clearTimeout:D.fakeClearTimeout, console };
+  setTimeout:D.fakeSetTimeout, clearTimeout:D.fakeClearTimeout, console,
+  TextEncoder, TextDecoder };
 vm.runInNewContext(js,sb,{timeout:8000});
 
 let pass=0, fail=0;
@@ -256,6 +257,85 @@ async function main(){
   assert(q9.status==='done' && !!q9.reply, 'desk still answers when the free tier is out of budget');
   assert(q9.reply.indexOf('reached its budget')===-1, 'quota notice never reaches the user');
   assert(/LIVE DATA|SCORE/.test(q9.reply), 'fallback answer is the live-data desk read');
+
+  /* ---- skeleton loader while a desk works ---- */
+  state.cache={};
+  state.llm.keys={deepseek:'',claude:'',openai:''}; state.llm.provider='free'; DESK.applyLLM();
+  const qp=DESK.bossQuery('skeleton probe on breadth');
+  assert(state.bulletin.some(b=>b.pending&&b.task===qp.id), 'a shimmering placeholder appears the moment a desk starts');
+  D.fireTimer(qp.timer); await flush(8);
+  assert(!state.bulletin.some(b=>b.pending&&b.task===qp.id), 'placeholder is replaced by the real answer');
+
+  /* ---- streaming answers ---- */
+  state.cache={}; state.stream=true; D.flags.streamLLM=true;
+  const qst=DESK.bossQuery('streaming probe on breadth');
+  D.fireTimer(qst.timer); await flush(10);
+  D.flags.streamLLM=false;
+  assert(qst.status==='done' && qst.reply.indexOf('RISK ON')!==-1, 'streamed deltas assemble into the final answer ('+String(qst.reply).slice(0,28)+'…)');
+
+  /* ---- thinking block ---- */
+  const th=DESK.splitThink('keep <thinking>step one; step two</thinking> the answer');
+  assert(th.think==='step one; step two' && th.answer.indexOf('<thinking>')===-1, 'thinking is split out of the answer');
+  assert(th.answer.indexOf('the answer')!==-1, 'answer text kept after removing the thinking block');
+  const plain=DESK.splitThink('no reasoning here');
+  assert(plain.think==='' && plain.answer==='no reasoning here', 'answers without a thinking block pass through');
+
+  /* ---- AI debate ---- */
+  state.cache={};
+  const beforeTasks=state.tasks.length;
+  const dp=DESK.runDebate('BTC');
+  await flush(3);
+  const panelTasks=state.tasks.filter(t=>t.stance&&t.createdAt>=Date.now()-2000);
+  assert(state.tasks.length>=beforeTasks+3, 'debate convened a panel ('+(state.tasks.length-beforeTasks)+' desks)');
+  assert(panelTasks.length>0 && panelTasks.every(t=>t.quiet), 'panel tasks are marked quiet (no Telegram spam)');
+  panelTasks.filter(t=>t.status==='working').forEach(t=>D.fireTimer(t.timer));
+  const dtext=await dp;
+  assert(typeof dtext==='string' && dtext.length>0, 'debate produced a chair synthesis');
+  assert(state.bulletin.some(b=>/^DEBATE — /.test(b.title)), 'debate verdict posted to the bulletin');
+  assert(state.bulletin.filter(b=>b.stance).length>0, 'panel cases are visible on the bulletin with their stance');
+
+  /* ---- every order executes (no dead ends) ---- */
+  const orders=['BTC latest price','what are the current trends?',"give me today's report",'analyze ETH',
+    'compare BTC vs ETH','check whales','check token unlocks','check smart money','check X sentiment',
+    'is this a scam','what about my tax','find trending coins','find early narratives','market update',
+    'what should I reduce','what am I missing',"play devil's advocate",'stress test my portfolio',
+    'analyze my portfolio','run investment committee','spawn an agent','hello there'];
+  const dead=[];
+  for(const o of orders){
+    const fp=()=>[state.tasks.length,doc.getElementById('modalRoot').children.length,state.bulletin.length,state.view].join('|');
+    const b=fp();
+    try{ DESK.runCommand(o); }catch(e){ dead.push(o+' → threw '+e.message); continue; }
+    await flush(2);
+    if(fp()===b) dead.push(o);
+    doc.getElementById('modalRoot').innerHTML='';
+  }
+  assert(dead.length===0, 'all '+orders.length+' order phrasings execute'+(dead.length?(' — dead ends: '+dead.join(' | ')):''));
+
+  /* ---- optional serverless backend: server AI + shared research feed ---- */
+  D.flags.serverAI=true;
+  const srv=await DESK.probeServer();
+  assert(srv.ok===true && srv.ai===true && srv.provider==='deepseek', 'server AI detected through /api/health');
+  state.llm.keys={deepseek:'',claude:'',openai:''};
+  DESK.autoFreeMode();
+  assert(state.llm.provider==='server', 'with no key set, desks prefer the office backend');
+  assert(state.agents.marketintel.provider==='server', 'desks are switched to the server provider');
+  state.cache={};
+  const qsv=DESK.bossQuery('server mode probe on breadth');
+  D.fireTimer(qsv.timer); await flush(8);
+  assert(qsv.status==='done' && /SERVER ANSWER/.test(qsv.reply||''), 'desk answer came from the office backend');
+  assert(D.apiCalls.length>0 && JSON.parse(D.apiCalls[0].body).question.length>0, 'client posts the question to /api/llm');
+  const added=await DESK.pullServerResearch();
+  assert(added>=1 && state.bulletin.some(b=>b.server&&String(b.text).indexOf('SERVER FEED POST')!==-1), 'server research appears on the bulletin');
+  const again=await DESK.pullServerResearch();
+  assert(again===0, 'server posts are not duplicated when polled again');
+  D.flags.serverFail=true; state.cache={};
+  const qfail=DESK.bossQuery('server failure probe');
+  D.fireTimer(qfail.timer); await flush(8);
+  assert(/SERVER AI unavailable/.test(qfail.reply||'') && /LIVE DATA|SCORE/.test(qfail.reply||''), 'backend failure falls back to the live-data desk read');
+  D.flags.serverFail=false;
+  assert((doc.getElementById('cFree').textContent||'').indexOf('SERVER AI')!==-1, 'the chip advertises server AI');
+  D.flags.serverAI=false;
+  state.llm.provider='free'; state.agents && Object.keys(state.agents).forEach(id=>{ state.agents[id].provider='free'; });
 
   /* ---- XSS hardening: user/API text must never become markup ---- */
   const xpayload='<img src=x onerror="window.__XSS=1">';

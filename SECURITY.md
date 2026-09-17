@@ -42,6 +42,21 @@ Clearing browser data removes them.
   never published.
 - No secrets are committed anywhere in the history — verified by scanning every revision.
 
+## If the serverless backend is enabled
+
+The optional backend in `netlify/functions/` never puts a secret in the browser:
+
+- The owner's LLM key lives in a **Netlify environment variable** and is used only inside the function.
+  It is never returned to the client (a test asserts the key never appears in any response).
+- CORS is an explicit allowlist of the site's own origins — unknown origins are not echoed back.
+- Requests are **rate limited per IP** (default 30/hour, 120/day) so an exposed key cannot be drained.
+- Input is validated and capped (question 800 chars, notes 400, symbols allowlisted) before any model call.
+- The manual research trigger requires `ADMIN_TOKEN`; the hourly schedule cannot be invoked over HTTP.
+- Scheduled research stores only market commentary — no visitor data, no IPs, no identifiers.
+
+When the backend is **not** configured, `/api/health` reports `serverAI:false` and the app falls back to
+the browser-only model (free keyless tier or the visitor's own key).
+
 ## Reporting
 
 If you find a security or privacy problem, please open an issue (or contact the owner privately for

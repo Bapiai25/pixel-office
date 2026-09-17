@@ -1,0 +1,29 @@
+{
+  "name": "pixel-office",
+  "version": "1.0.0",
+  "description": "Pixel-art crypto research office \u2014 static app + optional serverless backend",
+  "main": "index.js",
+  "scripts": {
+    "test": "node tools/run-office.js pixel-office.html",
+    "test:built": "node tools/run-office.js dist/index.html",
+    "test:play": "node tools/run-play.js pixel-play-space.html",
+    "test:functions": "node tools/test-functions.mjs",
+    "build": "python3 tools/build_dist.py",
+    "deploy": "python3 tools/netlify_deploy.py --site pixel-office-live"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bapiai25/pixel-office.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Bapiai25/pixel-office/issues"
+  },
+  "homepage": "https://github.com/Bapiai25/pixel-office#readme",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^11.1.0"
+  }
+}

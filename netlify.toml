@@ -1,0 +1,15 @@
+# Pixel Office — static site + optional serverless backend
+[build]
+  publish   = "dist"
+  functions = "netlify/functions"
+
+# clean API paths -> functions
+[[redirects]]
+  from   = "/api/*"
+  to     = "/.netlify/functions/:splat"
+  status = 200
+
+# the office works with or without the backend:
+#   no env vars          -> visitors use the free keyless tier or their own key (BYOK)
+#   LLM_PROVIDER + key   -> SERVER AI: visitors need no key (rate limited per IP)
+#   TELEGRAM_*           -> scheduled research posts to your chat

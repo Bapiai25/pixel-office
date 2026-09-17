@@ -55,6 +55,53 @@ git init && git add dist && git commit -m "pixel office"
 ```
 GitHub Pages ignores `_headers` (that's fine, it's optional hardening).
 
+## Serverless backend (optional — the site works without it)
+
+`netlify/functions/` ships a small backend. With **no environment variables set**, the app behaves
+exactly as before: visitors use the free keyless tier or their own key (BYOK). Set the variables
+below to switch on the extras.
+
+| Function | Route | What it does |
+|---|---|---|
+| `health.mjs` | `GET /api/health` | reports what is configured; the app probes this at boot |
+| `llm.mjs` | `POST /api/llm` | server-side desk answer using **your** key — visitors need no key. Rate limited per IP |
+| `feed.mjs` | `GET /api/feed` | recent scheduled research, shown in the bulletin of every visitor |
+| `research.mjs` | hourly schedule | autonomous research with nobody watching → Telegram + storage |
+| `research-now.mjs` | `POST /api/research-now?token=…` | manual trigger for one research cycle (guarded by `ADMIN_TOKEN`) |
+
+### Switch on SERVER AI — visitors need no API key
+
+```bash
+npx netlify-cli env:set LLM_PROVIDER deepseek --context production
+npx netlify-cli env:set LLM_MODEL deepseek-chat --context production
+npx netlify-cli env:set LLM_API_KEY sk-… --context production
+```
+
+### Send the research to Telegram
+
+```bash
+npx netlify-cli env:set TELEGRAM_BOT_TOKEN 123456:ABC-… --context production
+npx netlify-cli env:set TELEGRAM_CHAT_ID 123456789 --context production
+```
+
+### Safety limits for your key
+
+```bash
+npx netlify-cli env:set RATE_PER_HOUR 30 --context production   # per IP
+npx netlify-cli env:set RATE_PER_DAY 120 --context production   # per IP
+npx netlify-cli env:set RESEARCH_ENABLED false --context production   # pause the hourly job
+npx netlify-cli env:set ADMIN_TOKEN <random-string> --context production
+```
+
+Env changes need a redeploy:
+
+```bash
+npx netlify-cli deploy --prod --no-build --dir=dist --functions=netlify/functions
+```
+
+> **Cost note.** With SERVER AI on, *your* key pays for visitor requests. The per-IP caps are the
+> safety net; the scheduled job costs one model call per hour. Keep BYOK available for heavy users.
+
 ## After the first deploy
 
 1. **Custom domain** — buy one (Namecheap/Cloudflare, ~$10/yr) and point it at the host's

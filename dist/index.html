@@ -199,6 +199,18 @@
   .bullitem .bt{color:#cfdce0;white-space:pre-wrap;max-height:170px;overflow-y:auto;}
   .bullitem .bt.q{color:var(--blue);}
   .bullitem .bf{color:var(--dim);font-size:6px;margin-top:5px;border-top:2px dashed #1d2740;padding-top:4px;}
+  .bullitem.loading{border-color:#3a4a6a;}
+  .bullitem .sk{display:flex;flex-direction:column;gap:5px;margin:6px 0 4px;}
+  .bullitem .sk s{display:block;height:7px;text-decoration:none;border-radius:2px;
+    background:linear-gradient(90deg,#16203a 0%,#24314f 40%,#16203a 80%);background-size:220% 100%;
+    animation:shimmer 1.15s linear infinite;}
+  .bullitem .sk s:nth-child(2){width:88%;animation-delay:.12s;}
+  .bullitem .sk s:nth-child(3){width:64%;animation-delay:.24s;}
+  @keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+  .bullitem .bt.live-text{color:#9fe8cf;font-size:7px;}
+  .bullitem details.think{margin:6px 0 2px;border:2px dashed #2b3448;background:#0a1220;padding:5px 7px;}
+  .bullitem details.think summary{font-size:6px;color:var(--blue);cursor:pointer;letter-spacing:1px;}
+  .bullitem details.think .tt{margin-top:5px;color:#8fa3a8;font-size:6px;line-height:1.9;white-space:pre-wrap;max-height:180px;overflow-y:auto;}
   .lab{display:inline-block;border:2px solid var(--line);padding:1px 5px;font-size:6px;margin-right:4px;color:var(--green);}
   .lab.d{color:var(--blue);} .lab.i{color:var(--amber);} .lab.s{color:var(--pink);}
   .frow{display:grid;grid-template-columns:150px 1fr;gap:7px;align-items:center;margin-bottom:8px;font-size:7px;color:#9fb0b6;}
@@ -273,6 +285,7 @@
         <div class="cmdrow">
           <input type="text" id="cmdInput" placeholder="type your order — e.g. 'BTC latest price' or 'what are the current trends?'">
           <button class="retro run" id="bSend">SEND</button>
+          <button class="retro" id="bDebate" title="Four desks argue, the chair synthesises">&#9876; DEBATE</button>
         </div>
         <div class="suggest" id="cmdSuggest"></div>
       </div>
@@ -496,7 +509,8 @@ const state={
   llm:{provider:'free',model:'openai',medium:'both',keys:{deepseek:'',claude:'',openai:''}},
   bulletin:[],priceHover:null,tour:null,tourIdx:0,officeMemory:[],training:[],
   tg:{token:'',chat:'',on:true,events:{answer:true,alert:true,digest:true},last:null},
-  loop:{on:false,every:120,n:0,t:0},fast:true,cache:{}
+  loop:{on:false,every:120,n:0,t:0},fast:true,stream:true,cache:{},
+  server:{ok:false,ai:false,research:false,telegram:false,checked:0,limits:null}
 };
 const MARKET={q:{},hist:{},source:'—',status:'idle',error:'',updated:0,failures:0,nextRetry:0,
   fng:null,fees:null,trending:null,free:{online:[],offline:[]}};
@@ -1260,8 +1274,52 @@ async function autoConnect(manual){
 }
 function autoFreeMode(){
   if(state.llm.keys.deepseek||state.llm.keys.claude||state.llm.keys.openai) return;
-  state.llm.provider='free';
-  Object.keys(state.agents).forEach(id=>{ state.agents[id].provider='free'; state.agents[id].apiKey=''; });
+  const best=(state.server&&state.server.ai)?'server':'free';
+  state.llm.provider=best;
+  Object.keys(state.agents).forEach(id=>{ state.agents[id].provider=best; state.agents[id].apiKey=''; });
+}
+/* ---------- serverless backend (optional; the app works without it) ---------- */
+async function probeServer(){
+  try{
+    const r=await fetch('/api/health',{headers:{accept:'application/json'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    state.server={ok:true,ai:!!j.serverAI,provider:j.provider||null,research:!!j.research,
+      telegram:!!j.telegram,limits:j.limits||null,checked:Date.now()};
+  }catch(e){
+    state.server={ok:false,ai:false,research:false,telegram:false,limits:null,checked:Date.now(),err:e.message};
+  }
+  renderChips();
+  return state.server;
+}
+async function callServer(A,kind,question,notes){
+  const r=await fetch('/api/llm',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({desk:A.name,role:A.role,kind,question,notes:notes||'',symbols:state.symbols})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||('server '+r.status));
+  return j.answer||'(empty response)';
+}
+async function pullServerResearch(){
+  if(!state.server.ok) return 0;
+  let added=0;
+  try{
+    const r=await fetch('/api/feed',{headers:{accept:'application/json'}});
+    if(!r.ok) return 0;
+    const j=await r.json();
+    (j.posts||[]).forEach(p=>{
+      const key=p.key||(p.desk+'|'+p.at);
+      if(state.bulletin.some(b=>b.serverKey===key)) return;
+      state.bulletin.push({at:Date.parse(p.at)||Date.now(),task:'SERVER · '+String(p.at||'').slice(11,16),
+        from:'cio',title:p.desk+' — '+p.ask,kind:'server',text:p.answer,serverKey:key,server:true});
+      added++;
+    });
+    if(added){
+      state.bulletin.sort((a,b)=>b.at-a.at);
+      if(state.bulletin.length>40) state.bulletin.length=40;
+      renderBulletin();
+    }
+  }catch(e){}
+  return added;
 }
 async function refreshMarket(manual){
   if(!state.autoFeed&&!manual) return;
@@ -1664,7 +1722,8 @@ const cashFor=t=>Math.round(((t.live?34:20)+(t.live&&MARKET.status==='live'?6:0)
 function createTask(title,notes,live){
   const t={id:'T'+(state.taskSeq++),title,notes:notes||'',live:live!==undefined?!!live:true,
     kind:'',status:'unassigned',assignedTo:null,createdAt:Date.now(),startedAt:null,doneAt:null,
-    reply:null,error:false,timer:null};
+    reply:null,error:false,timer:null,quiet:false,stance:'',settle:null};
+  t.settle=new Promise(res=>{ t._done=res; });
   state.tasks.unshift(t); save(); return t;
 }
 function assignTask(task,who){
@@ -1687,6 +1746,7 @@ function assignTask(task,who){
   /* speculative execution: the desk starts answering now, so the LLM latency
      overlaps the work animation instead of being added to it */
   if(!task.prefetch) task.prefetch=answer(task,who);
+  if(!task.quiet) postPending(task,who);
   task.timer=setTimeout(()=>finishTask(task),workSecs(A)*1000);
   save(); checkLoad();
 }
@@ -1703,6 +1763,7 @@ function finishTask(task){
   (task.prefetch||answer(task,id)).then(reply=>{
     task.prefetch=null;
     task.reply=reply;
+    if(task._done){ task._done(reply); task._done=null; }
     const AL=agent(id); if(AL) AL.stats.tasks++;
     recordTraining(task,id,reply);
     if(state.llm.medium!=='bulletin') say(id,short(reply.replace(/\s+/g,' ').trim(),110),5200);
@@ -1713,6 +1774,7 @@ function finishTask(task){
     if(state.deskTab==='log') renderDossier();
   }).catch(err=>{
     task.reply='Could not reach '+A.provider+': '+err.message; task.error=true;
+    if(task._done){ task._done(task.reply); task._done=null; }
     say(id,'Hit a wall — read my desk.',3600); SFX.bad();
     toast(task.id+' failed','bad'); sendHome(id); save(); renderTasks(); renderCrew();
   });
@@ -1741,10 +1803,22 @@ async function answer(task,id){
     return msg;
   }
   A.history.push({role:'user',content:task.title+(task.notes?(' ('+task.notes+')'):'')});
+  if(A.provider==='server'){
+    let msg;
+    try{ msg=await callServer(A,kind,task.title,task.notes); }
+    catch(e){ msg=offlineAnswer(A,kind,task)+'\n\n(SERVER AI unavailable — '+e.message+')'; }
+    state.cache[ck]={at:Date.now(),text:msg};
+    A.history.push({role:'agent',content:msg});
+    if(state.deskTab==='log') renderDossier();
+    return msg;
+  }
   if(!A.apiKey){
     let msg;
     if(A.provider==='free'){
-      try{ msg=await callFree(A,deskContext(A,kind),task.title+(task.notes?'\n\nContext: '+task.notes:'')); }
+      try{
+        const ctx=deskContext(A,kind), ask=task.title+(task.notes?'\n\nContext: '+task.notes:'');
+        msg=state.stream===false?await callFree(A,ctx,ask):await callProviderStream(A,ctx,ask,streamTick(task.id));
+      }
       catch(e){ msg=offlineAnswer(A,kind,task)+'\n\n(FREE LLM offline — '+e.message+')'; }
     }else msg=offlineAnswer(A,kind,task);
     A.history.push({role:'agent',content:msg});
@@ -1754,7 +1828,9 @@ async function answer(task,id){
   }
   A.thinking=true;
   try{
-    const reply=await callProvider(A,deskContext(A,kind),task.title+(task.notes?'\n\nContext: '+task.notes:''));
+    const sys=deskContext(A,kind), usr=task.title+(task.notes?'\n\nContext: '+task.notes:'');
+    const reply=state.stream===false?await callProvider(A,sys,usr)
+      :await callProviderStream(A,sys,usr,streamTick(task.id));
     A.history.push({role:'agent',content:reply});
     state.cache[ck]={at:Date.now(),text:reply};
     return reply;
@@ -1786,6 +1862,7 @@ function deskContext(A,kind){
   p.push('TASK CLASSIFICATION: '+kind.toUpperCase()+' desk work.');
   p.push('Where a field above says LIVE DATA UNAVAILABLE, say exactly that and name the source that would fill it. Never fill it from memory.');
   p.push('Separate FACT, DATA, INTERPRETATION and SPECULATION. Finish with a score out of 100 for your desk (or "NO SCORE — insufficient data") and one line naming the single biggest uncertainty.');
+  p.push('If you reason before answering, put that reasoning inside <thinking>...</thinking> tags at the very start, then give the final answer outside the tags. Keep the final answer under 1200 characters.');
   return p.join('\n');
 }
 function marketContext(){
@@ -1970,6 +2047,67 @@ async function callDeepSeek(k,m,s,u){
   if(!r.ok){ const t=await r.text().catch(()=>''); throw new Error('DeepSeek '+r.status+': '+t.slice(0,160)); }
   const d=await r.json();
   return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'(empty response)';
+}
+async function callProviderStream(a,s,u,onDelta){
+  const prov=a.provider;
+  if(prov==='claude') return callClaude(a.apiKey,a.model,s,u);      /* different SSE shape — not streamed */
+  let url,headers,body;
+  if(prov==='free'){
+    url='https://text.pollinations.ai/openai'; headers={'content-type':'application/json'};
+    body={model:'openai',messages:[{role:'system',content:s},{role:'user',content:u}],stream:true};
+  }else if(prov==='deepseek'){
+    url='https://api.deepseek.com/chat/completions';
+    headers={'content-type':'application/json','authorization':'Bearer '+a.apiKey};
+    body={model:a.model||'deepseek-chat',messages:[{role:'system',content:s},{role:'user',content:u}],stream:true};
+  }else if(prov==='openai'){
+    url='https://api.openai.com/v1/chat/completions';
+    headers={'content-type':'application/json','authorization':'Bearer '+a.apiKey};
+    body={model:a.model||'gpt-4o-mini',messages:[{role:'system',content:s},{role:'user',content:u}],stream:true};
+  }else return callProvider(a,s,u);
+
+  const res=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error(prov+' '+res.status+': '+t.slice(0,160)); }
+  if(!res.body||typeof res.body.getReader!=='function'){
+    const d=await res.json();                                    /* no streaming available */
+    const out=(d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
+    guardFreeText(prov,out);
+    return out||'(empty response)';
+  }
+  const reader=res.body.getReader(),dec=new TextDecoder();
+  let buf='',text='';
+  for(;;){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    const chunks=buf.split('\n\n'); buf=chunks.pop();
+    for(const ch of chunks){
+      const line=ch.split('\n').filter(l=>l.indexOf('data:')===0)[0];
+      if(!line) continue;
+      const data=line.slice(5).trim();
+      if(!data||data==='[DONE]') continue;
+      try{
+        const j=JSON.parse(data);
+        const d=(j.choices&&j.choices[0]&&(j.choices[0].delta||j.choices[0].message))||{};
+        if(d.content){ text+=d.content; if(onDelta) onDelta(text); }
+      }catch(e){}
+    }
+  }
+  const clean=text.trim();
+  guardFreeText(prov,clean);
+  return clean||'(empty response)';
+}
+function guardFreeText(prov,out){
+  if(prov!=='free') return;
+  const low=String(out||'').toLowerCase();
+  const bad=['reached its budget','raise the key budget','rate limit','too many requests',
+    'unauthorized','invalid api key','quota','payment required','try again later'];
+  if(String(out||'').trim().length<10||bad.some(m=>low.indexOf(m)!==-1)) throw new Error('free tier notice, not an answer');
+}
+/* split <thinking>…</thinking> out of an answer */
+function splitThink(text){
+  const m=String(text||'').match(/<thinking>([\s\S]*?)<\/thinking>/i);
+  if(!m) return {answer:String(text||''),think:''};
+  return {answer:String(text).replace(m[0],'').trim(),think:m[1].trim()};
 }
 function callProvider(a,s,u){
   if(a.provider==='free') return callFree(a.apiKey,a.model,s,u);
@@ -2250,6 +2388,7 @@ function runCommand(text){
       '\n\nBEAR CASE\n'+biggestReasonNotToBuy(sym)):'LIVE DATA UNAVAILABLE for '+sym+'.');
     return;
   }
+  if(/^debate\b/.test(low)){ runDebate(t.replace(/^debate\s*/i,'')||'the tracked market'); return; }
   const hit=COMMANDS.filter(c=>c.label.toLowerCase()===low)[0]||COMMANDS.filter(c=>low.indexOf(c.label.toLowerCase())!==-1)[0];
   if(hit){ const out=hit.run(); if(out){ if(state.llm.medium!=='bubble') postCmdBulletin(t,out); openText('COMMAND DESK — '+t,out); } return; }
   if(sym){
@@ -2261,6 +2400,8 @@ function runCommand(text){
 
 /* ===================== AI / API SETTINGS, BULLETIN, BOSS QUERIES ===================== */
 const LLM_CFG={
+  server:{label:'SERVER AI — no key needed (office pays)',url:'/api/llm',keyHelp:'provided by the office',
+    models:['server']},
   free:{label:'FREE — Pollinations (no key needed)',url:'https://text.pollinations.ai/openai',keyHelp:'none — auto-connected',
     models:['openai']},
   deepseek:{label:'DeepSeek',url:'https://api.deepseek.com/chat/completions',keyHelp:'platform.deepseek.com',
@@ -2282,12 +2423,13 @@ function collectCfg(){
     tg:{token:$('tgToken').value.trim(),chat:$('tgChat').value.trim(),
       on:$('tgOn').value==='on',
       events:{answer:$('tgE_answer').value==='on',alert:$('tgE_alert').value==='on',digest:$('tgE_digest').value==='on'}},
-    fast:$('fastMode').value==='on', loopEvery:Math.max(30,Math.min(3600,Number($('loopEvery').value)||120))};
+    fast:$('fastMode').value==='on', stream:$('streamMode').value==='on',
+    loopEvery:Math.max(30,Math.min(3600,Number($('loopEvery').value)||120))};
 }
 function storeCfg(cfg){
   state.llm={provider:cfg.provider,model:cfg.model,medium:cfg.medium,keys:cfg.keys};
   state.tg=Object.assign({last:state.tg.last},cfg.tg);
-  state.fast=cfg.fast; state.loop.every=cfg.loopEvery;
+  state.fast=cfg.fast; state.stream=cfg.stream; state.loop.every=cfg.loopEvery;
   Object.keys(state.agents).forEach(id=>{ state.agents[id].apiKey=state.llm.keys[state.agents[id].provider]||''; });
   save(); renderChips();
 }
@@ -2310,7 +2452,7 @@ function openSettings(){
   const keys={};
   Object.keys(LLM_CFG).forEach(p=>{
     const k=document.createElement('input'); k.type='password'; k.id='llmKey_'+p;
-    if(p==='free'){ k.disabled=true; k.placeholder='keyless — free tier, auto-connected'; }
+    if(p==='free'||p==='server'){ k.disabled=true; k.placeholder=p==='server'?'provided by the office — no key needed':'keyless — free tier, auto-connected'; }
     else k.placeholder='sk-… ('+LLM_CFG[p].keyHelp+')';
     k.value=state.llm.keys[p]||'';
     keys[p]=k;
@@ -2333,6 +2475,7 @@ function openSettings(){
   const tgEl=mkSel('tgE_alert',YN,state.tg.events.alert?'on':'off');
   const tgEd=mkSel('tgE_digest',YN,state.tg.events.digest?'on':'off');
   const fast=mkSel('fastMode',[['on','FAST — short work animation (recommended)'],['off','CINEMATIC — full work animation']],state.fast?'on':'off');
+  const strm=mkSel('streamMode',[['on','STREAM — answers type out live (recommended)'],['off','WAIT — show the answer only when finished']],state.stream===false?'off':'on');
   const lpEv=document.createElement('input'); lpEv.type='text'; lpEv.id='loopEvery';
   lpEv.value=String(state.loop.every); lpEv.placeholder='seconds between auto-loop runs (default 120)';
   const status=document.createElement('div'); status.className='note'; status.id='llmStatus';
@@ -2359,6 +2502,7 @@ function openSettings(){
   body.appendChild(row('Send market alerts',tgEl));
   body.appendChild(row('Send daily digest',tgEd));
   body.appendChild(row('Response speed',fast));
+  body.appendChild(row('Streaming',strm));
   body.appendChild(row('Auto-loop every (s)',lpEv));
   body.appendChild(row('DeepSeek key',keys.deepseek));
   body.appendChild(row('Claude key',keys.claude));
@@ -2424,11 +2568,26 @@ function renderBulletin(){
   }
   state.bulletin.forEach(p=>{
     const a=agent(p.from);
-    const item=document.createElement('div'); item.className='bullitem';
+    const item=document.createElement('div'); item.className='bullitem'+(p.pending?' loading':'');
     const head=document.createElement('div'); head.className='bh';
     head.innerHTML='<b>'+(a?esc(a.name)+' · '+esc(a.role):esc(p.from))+'</b><i>'+esc(p.task)+' · '+ago(p.at)+'</i>';
     const title=document.createElement('div'); title.className='bt q'; title.textContent=p.title;
+    if(p.pending){
+      const sk=document.createElement('div'); sk.className='sk';
+      sk.innerHTML='<s></s><s></s><s></s>';
+      const note=el2('div','note',p.text?(short(p.text,600)+' ▌'):(esc(p.who||'the desk')+' is working…'));
+      note.className='bt live-text';
+      item.appendChild(head); item.appendChild(title); item.appendChild(sk); item.appendChild(note);
+      w.appendChild(item); return;
+    }
     const body=document.createElement('div'); body.className='bt'; body.textContent=p.text;
+    let thinkEl=null;
+    if(p.think){
+      thinkEl=document.createElement('details'); thinkEl.className='think';
+      const sum=document.createElement('summary'); sum.textContent='THOUGHT PROCESS';
+      const tt=document.createElement('div'); tt.className='tt'; tt.textContent=p.think;
+      thinkEl.appendChild(sum); thinkEl.appendChild(tt);
+    }
     const foot=document.createElement('div'); foot.className='bf';
     foot.innerHTML=tagged(p.text)+'<span style="color:var(--dim)">'+esc(p.kind.toUpperCase())+'</span>';
     const ok=document.createElement('button'); ok.className='retro'; ok.style.cssText='padding:1px 5px;font-size:6px;margin-left:6px;';
@@ -2436,12 +2595,41 @@ function renderBulletin(){
     const no=document.createElement('button'); no.className='retro red'; no.style.cssText=ok.style.cssText;
     no.textContent='FLAG'; no.addEventListener('click',e=>{ e.stopPropagation(); rateAnswer(p.from,false,p); renderBulletin(); });
     foot.appendChild(ok); foot.appendChild(no);
-    item.appendChild(head); item.appendChild(title); item.appendChild(body); item.appendChild(foot);
+    item.appendChild(head); item.appendChild(title); item.appendChild(body);
+    if(thinkEl) item.appendChild(thinkEl);
+    if(p.stance){ const st=el2('div','note','STANCE: '+p.stance); item.appendChild(st); }
+    item.appendChild(foot);
     w.appendChild(item);
   });
 }
+let streamRaf=0;
+function streamTick(taskId){
+  return function(partial){
+    if(!setPendingText(taskId,partial)) return;
+    if(streamRaf) return;
+    streamRaf=setTimeout(()=>{ streamRaf=0; renderBulletin(); },140);
+  };
+}
+function postPending(task,id){
+  const A=agent(id);
+  state.bulletin=state.bulletin.filter(b=>!(b.pending&&b.task===task.id));
+  state.bulletin.unshift({at:Date.now(),task:task.id,from:id,title:task.title,kind:task.kind||'market',
+    text:'',pending:true,who:A?A.name:id});
+  if(state.bulletin.length>40) state.bulletin.length=40;
+  renderBulletin();
+}
+function setPendingText(taskId,text){
+  const e=state.bulletin.filter(b=>b.pending&&b.task===taskId)[0];
+  if(!e) return false;
+  e.text=text;
+  return true;
+}
 function postBulletin(task,id,reply){
-  state.bulletin.unshift({at:Date.now(),task:task.id,from:id,title:task.title,kind:task.kind||'market',text:reply});
+  state.bulletin=state.bulletin.filter(b=>!(b.pending&&b.task===task.id));
+  const split=splitThink(reply);
+  reply=split.answer;
+  state.bulletin.unshift({at:Date.now(),task:task.id,from:id,title:task.title,kind:task.kind||'market',
+    text:reply,think:split.think||'',stance:task.stance||''});
   if(state.bulletin.length>40) state.bulletin.length=40;
   save(); renderBulletin();
   const A2=agent(id);
@@ -2525,6 +2713,11 @@ const LOOP_QUEUE=[
   'Summarise breadth: how many of the tracked symbols are up on the day?',
   'What would invalidate the current market read?'
 ];
+function DEFAULT_DEBATE_Q(){
+  const r=ranked();
+  if(r.length&&r[0].sym) return r[0].sym;
+  return state.symbols[0]||'BTC';
+}
 function loopTick(dt){
   const L=state.loop;
   if(!L.on) return;
@@ -2581,6 +2774,56 @@ async function tgFindChat(token){
 async function tgTest(){
   const d=await tgSend(tgFormat('report','Pixel Office is connected','Live market updates, desk answers and alerts will arrive in this chat.','test message'));
   return d;
+}
+
+/* ---------- AI debate: a panel argues, the chair synthesises ---------- */
+const DEBATE_STANCES=[
+  {id:'technical',stance:'ARGUE THE BULL CASE from price structure, momentum and levels.'},
+  {id:'risk',     stance:'ARGUE THE BEAR CASE — what would make this fail? Be the sceptic.'},
+  {id:'quant',    stance:'GIVE THE QUANT READ — probabilities, volatility, correlation and sample limits.'},
+  {id:'onchain',  stance:'GIVE THE ON-CHAIN / FLOW READ — what network data actually shows.'}
+];
+function debatePanel(q){
+  const low=String(q||'').toLowerCase();
+  const p=DEBATE_STANCES.map(x=>Object.assign({},x));
+  if(/narrative|trend|sector|rotation/.test(low))
+    p[3]={id:'narrative',stance:'GIVE THE NARRATIVE READ — attention, rotation, early versus overheated.'};
+  if(/macro|fed|rate|cpi|dollar|liquidity/.test(low))
+    p[2]={id:'news_macro',stance:'GIVE THE MACRO READ — liquidity, policy and the rates backdrop.'};
+  if(/whale|flow|accumul/.test(low))
+    p[3]={id:'whale',stance:'GIVE THE FLOW READ — large transfers and what they do NOT prove.'};
+  return p.filter(x=>agent(x.id));
+}
+async function runDebate(q){
+  const question=String(q||'').trim(); if(!question) return null;
+  const panel=debatePanel(question);
+  if(!panel.length){ toast('No debate desks are on payroll','bad'); return null; }
+  toast('Debate: '+panel.length+' desks on "'+short(question,32)+'"','good');
+  addLog('DB','Debate panel: '+panel.map(x=>agent(x.id).name).join(', '),'debate');
+  const tasks=panel.map(x=>{
+    const t=createTask(question,'DEBATE PANEL — '+x.stance,true);
+    t.quiet=true;
+    t.stance=x.stance.replace(/^(ARGUE|GIVE) THE /,'').replace(/\.$/,'');
+    assignTask(t,x.id);
+    return t;
+  });
+  const replies=await Promise.all(tasks.map(t=>t.settle));
+  const chair=agent('cio')||agent('orchestrator');
+  let text;
+  try{
+    const sys=deskContext(chair,'committee')+'\n\nYou are chairing a live debate. Each desk answered the same question from a different stance.';
+    const usr='QUESTION: '+question+'\n\n'+
+      panel.map((x,i)=>'--- '+agent(x.id).name+' — '+x.stance+'\n'+replies[i]).join('\n\n')+
+      '\n\nWrite exactly these sections: CONSENSUS, DISSENT, BASE CASE, VERDICT (with a confidence percentage) and BIGGEST UNCERTAINTY.';
+    text=state.stream===false?await callProvider(chair,sys,usr):await callProviderStream(chair,sys,usr,null);
+  }catch(e){
+    text='Chair synthesis unavailable ('+e.message+'). Panel cases:\n\n'+
+      panel.map((x,i)=>'• '+agent(x.id).name+' — '+x.stance+'\n'+short(replies[i],400)).join('\n\n');
+  }
+  const split=splitThink(text);
+  postBulletin({id:'D'+(Date.now()%100000),title:'DEBATE — '+question,kind:'committee'},chair.id,split.answer);
+  toast('Debate verdict posted','good');
+  return split.answer;
 }
 
 /* ---------- self-learning: memory, feedback, outcome attribution ---------- */
@@ -3150,7 +3393,8 @@ function renderChips(){
   const fr=$('cFree');
   if(fr){
     const n=MARKET.free.online.length, t=n+MARKET.free.offline.length;
-    fr.textContent='FREE APIS: '+n+'/'+t+' · LLM '+(state.llm.provider==='free'?'FREE':state.llm.provider.toUpperCase());
+    fr.textContent='FREE APIS: '+n+'/'+t+' · LLM '+(state.llm.provider==='free'?'FREE':state.llm.provider.toUpperCase())
+      +(state.server.ai?' · SERVER AI':'');
     fr.className='chip'+(n===t&&t>0?' live':' warn');
     fr.title='Online: '+(MARKET.free.online.join(', ')||'—')+'\nOffline: '+(MARKET.free.offline.join('; ')||'—');
   }
@@ -3711,9 +3955,14 @@ function wire(){
   const ci=$('cmdInput');
   ci.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=ci.value; ci.value=''; runCommand(v); } });
   $('bSend').addEventListener('click',()=>{ const v=$('cmdInput').value; $('cmdInput').value=''; runCommand(v); });
+  $('bDebate').addEventListener('click',()=>{
+    const v=$('cmdInput').value.trim()||DEFAULT_DEBATE_Q();
+    $('cmdInput').value='';
+    runDebate(v);
+  });
   const sg=$('cmdSuggest');
   ['Give me today\'s report','Market update','Analyze BTC','Find trending coins','Run investment committee',
-   'Check token unlocks','Play devil\'s advocate','Spawn an agent'].forEach(label=>{
+   'Check token unlocks','Play devil\'s advocate','Spawn an agent','Debate BTC'].forEach(label=>{
     const b=document.createElement('button'); b.className='retro'; b.type='button'; b.textContent=label;
     b.addEventListener('click',()=>runCommand(label));
     sg.appendChild(b);
@@ -3778,6 +4027,7 @@ function startFeed(){
 (async function init(){
   initOffice();
   await Promise.all([loadCfg(),loadGame()]);
+  await probeServer();
   applyLLM(); autoFreeMode();
   boot();
   buildOverlay();
@@ -3793,6 +4043,7 @@ function startFeed(){
   startFeed();
   setInterval(renderClock,1000); renderClock();
   setInterval(autoConnect,300000); autoConnect();
+  pullServerResearch(); setInterval(pullServerResearch,300000);
   state.lastReport=buildReport();
   toast('Research floor online. Click a desk, or press R for the daily report.','good');
   setTimeout(()=>say('orchestrator','Morning, CIO. Ask us anything — and we will say plainly when the data is missing.',4600),1200);
@@ -3813,7 +4064,7 @@ window.__DESK__={state,MARKET,units,ORG,BENCH,HOUSE_RULES,WEIGHTS,MISSING,RW,RH,
   learn,rateAnswer,creditTrade,officeDigest,deskContext,
   recordTraining,rateRecord,tradeRecord,trainingJSONL,exportTraining,
   LOOKS,mkAgent,tgSend,tgPush,tgFormat,tgReady,tgTest,tgEsc,loopTick,LOOP_QUEUE,
-  renderTasks,
+  renderTasks,probeServer,callServer,pullServerResearch,runDebate,debatePanel,splitThink,callProviderStream,postPending,setPendingText,
   tagged,LLM_CFG,testLLM:null};
 </script>
 </body>

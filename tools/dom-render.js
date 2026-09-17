@@ -165,7 +165,7 @@ const document={
   dispatchKey(k){ (document._ev.keydown||[]).forEach(f=>f({key:k,target:{tagName:'DIV'},preventDefault(){}})); }
 };
 
-const IDS=['an','ava','bars','bBulletinClear','bData','bDay','bHire','bNewTask','bNight','bReport','bReset','bRun','bScan','bSend','bLoop','bSettings','bSfx','bTour','bulletinList','cCash','cClock','cCoins','cDay','cFeed','cFree','cLoop','cTg','cmdInput','cmdSuggest',
+const IDS=['an','ava','bars','bBulletinClear','bData','bDay','bHire','bNewTask','bNight','bReport','bReset','bRun','bScan','bSend','bLoop','bDebate','bSettings','bSfx','bTour','bulletinList','cCash','cClock','cCoins','cDay','cFeed','cFree','cLoop','cTg','cmdInput','cmdSuggest',
   'cMkt','crewList','divName','hdrSub','law','log','mand','modalRoot','nm','office','ov','payroll','railText',
   'rl','scan','shop','tag','taskBoard','tickerBadge','toasts','viewBody','viewTitle'];
 IDS.forEach(id=>{ const el=makeEl(id==='office'||id==='ava'?'canvas':'div'); byId[id]=el; docEls.push(el); });

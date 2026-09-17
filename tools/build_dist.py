@@ -110,6 +110,10 @@ def main():
             '\n    <span>RESEARCH, NOT FINANCIAL ADVICE &middot; '
             '<a href="terms.html" style="color:var(--amber)">TERMS &amp; DISCLAIMER</a></span>')])
 
+    redir = os.path.join(DIST, "_redirects")
+    open(redir, "w").write("/api/*  /.netlify/functions/:splat  200\n")
+    print("  wrote dist/_redirects (api -> functions)")
+
     robots = os.path.join(DIST, "robots.txt")
     if not os.path.exists(robots):
         open(robots, "w").write("User-agent: *\nAllow: /\n")

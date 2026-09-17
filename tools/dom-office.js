@@ -107,7 +107,7 @@ const document={
   dispatchKey(k){ (document._ev.keydown||[]).forEach(f=>f({key:k,target:{tagName:'DIV'},preventDefault(){}})); }
 };
 
-const IDS=['an','ava','bars','bBulletinClear','bData','bDay','bHire','bNewTask','bNight','bReport','bReset','bRun','bScan','bSend','bLoop','bSettings','bSfx','bTour','bulletinList','cCash','cClock','cCoins','cDay','cFeed','cFree','cLoop','cTg','cmdInput','cmdSuggest',
+const IDS=['an','ava','bars','bBulletinClear','bData','bDay','bHire','bNewTask','bNight','bReport','bReset','bRun','bScan','bSend','bLoop','bDebate','bSettings','bSfx','bTour','bulletinList','cCash','cClock','cCoins','cDay','cFeed','cFree','cLoop','cTg','cmdInput','cmdSuggest',
   'cMkt','crewList','divName','hdrSub','law','log','mand','modalRoot','nm','office','ov','payroll','railText',
   'rl','scan','shop','tag','taskBoard','tickerBadge','toasts','viewBody','viewTitle'];
 IDS.forEach(id=>{ const el=makeEl(id==='office'||id==='ava'?'canvas':'div'); byId[id]=el; docEls.push(el); });
@@ -151,10 +151,28 @@ const CG_ROWS={
 };
 
 const tgCalls=[];
-const flags={pollinationsBudget:false};
+const flags={pollinationsBudget:false,streamLLM:false,serverAI:false,serverFail:false};
+const apiCalls=[];
 async function fakeFetch(url,opts){
   url=String(url);
   /* --- newer free sources (checked before the broader matches) --- */
+  /* --- optional serverless backend --- */
+  if(url.indexOf('/api/health')!==-1){
+    if(!flags.serverAI) return {ok:false,status:404,json:async()=>({})};
+    return {ok:true,status:200,json:async()=>({ok:true,serverAI:true,provider:'deepseek',model:'deepseek-chat',
+      research:true,telegram:false,limits:{perHour:30,perDay:120}})};
+  }
+  if(url.indexOf('/api/llm')!==-1){
+    apiCalls.push({url,body:opts&&opts.body?String(opts.body):''});
+    if(flags.serverFail) return {ok:false,status:500,json:async()=>({error:'provider call failed'})};
+    return {ok:true,status:200,json:async()=>({answer:'SERVER ANSWER — desk read produced by the office backend.',
+      engine:'deepseek',source:'CoinGecko'})};
+  }
+  if(url.indexOf('/api/feed')!==-1){
+    return {ok:true,status:200,json:async()=>({posts:[{key:'post/fixed-1',at:new Date().toISOString(),
+      desk:'Market Intelligence',ask:'Scan the tape',answer:'SERVER FEED POST — breadth mixed, funding flat.',
+      engine:'deepseek',source:'CoinGecko'}]})};
+  }
   if(url.indexOf('coingecko.com/api/v3/coins/categories')!==-1)
     return {ok:true,status:200,json:async()=>[
       {id:'ai',name:'Artificial Intelligence',market_cap:3.1e10,market_cap_change_24h:6.2},
@@ -198,6 +216,15 @@ async function fakeFetch(url,opts){
       {id:'eth_0xabc',attributes:{name:'SHIB/WETH',base_token_price_usd:'0.00002',price_change_percentage:{h24:'12.5'},volume_usd:{h24:'5000000'}}},
       {id:'sol_0xdef',attributes:{name:'BONK/SOL',base_token_price_usd:'0.00000003',price_change_percentage:{h24:'8.2'},volume_usd:{h24:'3000000'}}}]})};
   if(url.indexOf('pollinations')!==-1){
+    if(flags.streamLLM){
+      const parts=['TRENDS: ','RISK ON ','— breadth ','2/3 up.'];
+      let i=0;
+      return {ok:true,status:200,body:{getReader(){ return {read(){
+        if(i>=parts.length) return Promise.resolve({done:true});
+        const chunk='data: '+JSON.stringify({choices:[{delta:{content:parts[i++]}}]})+'\n\n';
+        return Promise.resolve({done:false,value:new TextEncoder().encode(chunk)});
+      }};}}};
+    }
     if(flags.pollinationsBudget)     /* simulate an exhausted free tier */
       return {ok:true,status:200,json:async()=>({choices:[{message:{content:'The API key used for this request has reached its budget. Please raise the key budget, then try again.'}}]})};
     return {ok:true,status:200,json:async()=>({choices:[{message:{content:'FREE-LLM: trends read from live context — 2/3 tracked assets up, top pools SHIB/WETH, BONK/SOL.'}}]})};
@@ -216,5 +243,5 @@ async function fakeFetch(url,opts){
   return {ok:false,status:404,json:async()=>[]};
 }
 
-module.exports={ tgCalls, flags, document, byId, docEls, makeEl, windowObj, fakeSetInterval, fakeClearInterval,
+module.exports={ tgCalls, flags, apiCalls, document, byId, docEls, makeEl, windowObj, fakeSetInterval, fakeClearInterval,
   fakeSetTimeout, fakeClearTimeout, fakeRaf, pump, fakeFetch, fireTimer, mem };
