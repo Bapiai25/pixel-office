@@ -4,6 +4,28 @@
 
 ---
 
+## Security & privacy posture (verified)
+
+- **No credentials in the repo or the site.** Scanned every revision for token-shaped strings: none.
+  The `worker-config.json` that was briefly tracked contained empty key fields (verified by reading
+  the old blob) — nothing was ever exposed.
+- **Purged from git history** (not just untracked): `worker-config.json`, `worker-log.jsonl`,
+  `.netlify-site`, `AGENTS.md`, `dist/DEPLOY.md` → 0 objects remain across all revisions; verified
+  via the GitHub contents API (404) and code search (0 hits).
+- **Nothing internal is published.** Deploy notes moved to `DEPLOY.md` at the repo root (outside
+  `dist/`), so the web root serves only `index.html`, `play.html`, `terms.html`, `og.png`,
+  `robots.txt`, `_headers`. `/DEPLOY.md` on the live site now returns 404.
+- **Local paths and personal identifiers removed** from all tracked files (no `/Users/...`,
+  no account slugs, no site ids). Commit author is the GitHub noreply address only.
+- **Runtime secrets stay on your machine**: `worker-config.json` + `worker-log.jsonl` are gitignored
+  and never leave your disk except as Telegram messages you configure.
+- See `SECURITY.md` for the visitor-facing model (keys live in each visitor's own browser).
+
+> Note on force-pushing: the rewritten history was force-pushed, so the old commits are no longer
+> referenced. GitHub may keep unreferenced objects reachable by SHA for a while — irrelevant here
+> because they contained no secrets, but contact GitHub support if you ever need a hard purge of
+> genuinely sensitive data.
+
 ## Source of truth
 
 **GitHub (public):** the project repo — 9 commits, everything attributed to
