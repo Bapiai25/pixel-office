@@ -29,8 +29,15 @@ async function main(){
   assert(DESK.MARKET.fng && DESK.MARKET.fng.value===57, 'Fear & Greed auto-connected (57/Greed)');
   assert(DESK.MARKET.fees && DESK.MARKET.fees.fastest===4, 'mempool fees auto-connected (4 sat/vB)');
   assert(DESK.MARKET.trending && DESK.MARKET.trending.rows.length===2, 'trending pools auto-connected (2 rows)');
-  assert(DESK.MARKET.free.online.length===3 && DESK.MARKET.free.offline.length===0, 'all 3 free sources online');
-  assert(doc.getElementById('cFree').textContent.indexOf('FREE APIS: 3/3')!==-1, 'free-apis chip shows 3/3');
+  assert(DESK.MARKET.free.online.length===8 && DESK.MARKET.free.offline.length===0, 'all 8 free sources online ('+DESK.MARKET.free.online.join(', ')+')');
+  assert(DESK.MARKET.deriv && DESK.MARKET.deriv.rows.BTC.funding!==null, 'derivatives connected (funding rate)');
+  assert(DESK.MARKET.cats && DESK.MARKET.cats.gainers.length>0, 'narratives connected (categories)');
+  assert(DESK.MARKET.defi && DESK.MARKET.defi.total>0, 'DeFi TVL connected');
+  assert(DESK.MARKET.whales && DESK.MARKET.whales.rows.length===3, 'large BTC transfers connected');
+  assert(DESK.MARKET.conf && DESK.MARKET.conf.rows.BTC && DESK.MARKET.conf.rows.BTC.agree===true, 'cross-source price check agrees');
+  const mc=DESK.marketContext();
+  assert(mc.indexOf('DERIVATIVES')!==-1 && mc.indexOf('NARRATIVES 24h')!==-1 && mc.indexOf('SOURCE CHECK')!==-1, 'desk context carries the new data + source check');
+  assert(doc.getElementById('cFree').textContent.indexOf('FREE APIS: 8/8')!==-1, 'free-apis chip shows 8/8');
   assert(Array.isArray(state.bulletin), 'bulletin array exists');
 
   /* settings modal */
@@ -249,6 +256,41 @@ async function main(){
   assert(q9.status==='done' && !!q9.reply, 'desk still answers when the free tier is out of budget');
   assert(q9.reply.indexOf('reached its budget')===-1, 'quota notice never reaches the user');
   assert(/LIVE DATA|SCORE/.test(q9.reply), 'fallback answer is the live-data desk read');
+
+  /* ---- XSS hardening: user/API text must never become markup ---- */
+  const xpayload='<img src=x onerror="window.__XSS=1">';
+  const imgCount=()=>D.docEls.filter(e=>e.tag==='IMG').length;
+  const base0=imgCount();
+  const xt=DESK.createTask(xpayload,'',true);
+  DESK.assignTask(xt,'marketintel');
+  DESK.renderTicker();
+  assert(imgCount()===base0, 'task title with HTML does not inject into the ticker');
+  DESK.renderTasks();
+  assert(imgCount()===base0, 'task title with HTML does not inject into the task board');
+  state.alerts.unshift({id:'AX1',kind:'bear',title:xpayload,body:xpayload,at:Date.now()});
+  DESK.renderTicker();
+  assert(imgCount()===base0, 'alert text with HTML does not inject into the ticker');
+  DESK.runCommand('Market update '+xpayload);
+  assert(imgCount()===base0, 'command-desk payload does not inject into the modal');
+  const rootTxt=doc.getElementById('modalRoot').textContent||'';
+  assert(rootTxt.indexOf('<img')!==-1, 'payload is shown as literal text, not markup');
+  doc.getElementById('modalRoot').innerHTML='';
+  const xb={id:'TX1',task:'T1',from:'marketintel',title:xpayload,kind:'market',text:xpayload,at:Date.now()};
+  state.bulletin.unshift(xb); DESK.renderBulletin();
+  assert(imgCount()===base0, 'bulletin text with HTML does not inject');
+  assert((doc.getElementById('bulletinList').textContent||'').indexOf('<img')!==-1, 'bulletin keeps the payload as text');
+  state.bulletin=state.bulletin.filter(b=>b.id!=='TX1');
+  /* alerts tab must not throw when an alert fires (regression: undefined renderAlerts()) */
+  state.view='alerts';
+  let aerr=null;
+  try{ DESK.MARKET.q.BTC.chg=8.2; state.alerts.length=0; DESK.detectAlerts(); }catch(e){ aerr=e; }
+  assert(!aerr, 'alert while the alerts view is open does not throw'+(aerr?' — '+aerr.message:''));
+  assert(state.alerts.length>0, 'alert still recorded with the view open');
+  state.view='dossier';
+  DESK.MARKET.q.BTC.chg=1.5;
+  const tgp=DESK.tgFormat('answer',xpayload,xpayload);
+  assert(tgp.indexOf('<img')===-1 && tgp.indexOf('&lt;img')!==-1, 'telegram messages escape HTML');
+  DESK.renderTicker();
 
   /* frame() with price hover + busy dots runs clean */
   state.priceHover={id:'marketintel',sym:'BTC',price:'77,839.00',chg:'+1.35%',until:Date.now()+99999};

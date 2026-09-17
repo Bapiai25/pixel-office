@@ -2,7 +2,9 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://api.coingecko.com https://api.binance.com https://fapi.binance.com https://api.coinbase.com https://api.alternative.me https://mempool.space https://api.geckoterminal.com https://text.pollinations.ai https://api.telegram.org https://api.llama.fi https://api.deepseek.com https://api.openai.com https://api.anthropic.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; upgrade-insecure-requests
 
 /*.html
   Cache-Control: public, max-age=0, must-revalidate

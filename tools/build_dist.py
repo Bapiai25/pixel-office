@@ -61,7 +61,33 @@ DISCLAIMER = ('\n    <span>RESEARCH, NOT FINANCIAL ADVICE &middot; '
               '<a href="terms.html" style="color:var(--amber)">TERMS &amp; DISCLAIMER</a>'
               ' &middot; market data may be delayed or unavailable</span>')
 
-TERMS = None  # loaded from dist/terms.html if present, otherwise regenerated below
+ORIGINS = ["https://api.coingecko.com", "https://api.binance.com", "https://fapi.binance.com",
+           "https://api.coinbase.com", "https://api.alternative.me", "https://mempool.space",
+           "https://api.geckoterminal.com", "https://text.pollinations.ai", "https://api.telegram.org",
+           "https://api.llama.fi",
+           # bring-your-own-key providers
+           "https://api.deepseek.com", "https://api.openai.com", "https://api.anthropic.com"]
+
+CSP = ("default-src 'self'; "
+       "script-src 'self' 'unsafe-inline'; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src https://fonts.gstatic.com data:; "
+       "img-src 'self' data: blob:; "
+       "connect-src 'self' " + " ".join(ORIGINS) + "; "
+       "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; "
+       "upgrade-insecure-requests")
+
+SECURITY_HEADERS = f"""/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: {CSP}
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+"""
 
 
 def main():
@@ -90,17 +116,8 @@ def main():
         print("  wrote dist/robots.txt")
 
     headers = os.path.join(DIST, "_headers")
-    if not os.path.exists(headers):
-        open(headers, "w").write("""/*
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: SAMEORIGIN
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(), microphone=(), camera=()
-
-/*.html
-  Cache-Control: public, max-age=0, must-revalidate
-""")
-        print("  wrote dist/_headers")
+    open(headers, "w").write(SECURITY_HEADERS)
+    print("  wrote dist/_headers (with CSP)")
 
     missing = [f for f in ("terms.html", "og.png") if not os.path.exists(os.path.join(DIST, f))]
     if missing:

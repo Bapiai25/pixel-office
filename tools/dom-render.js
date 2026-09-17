@@ -144,8 +144,11 @@ function makeEl(tag){
       if(v!=='') parseInto(el,v); }
   });
   Object.defineProperty(el,'textContent',{
-    get(){ return el._text; },
-    set(v){ el._text=String(v); el._inner=String(v); }
+    /* aggregate children like a real DOM, so text-content assertions are faithful */
+    get(){ return (el.children&&el.children.length)
+      ? el.children.map(c=>c.textContent||'').join('')
+      : el._text; },
+    set(v){ el._text=String(v); el._inner=String(v); el.children.length=0; }
   });
   return el;
 }

@@ -4,6 +4,41 @@
 
 ---
 
+## Response to the external architecture reviews
+
+Two reviews were shared (a ChatGPT share link and a pasted security/architecture note). Outcome:
+
+**Fixed — real issues they correctly flagged**
+- **XSS in the ticker** (genuine, key-stealing): user-typed task titles and alert text were interpolated
+  into `rail.innerHTML` unescaped. A payload like `<img src=x onerror="…localStorage…">` would have run
+  and could have read the LLM/Telegram keys out of localStorage. Now escaped, with 8 regression tests
+  (task board, ticker, alerts, command modal, bulletin, Telegram payloads).
+- **Latent crash**: `pushAlert()` called a `renderAlerts()` that never existed — if an alert fired while
+  the alerts tab was open, the exception was swallowed by the feed's try/catch and could knock the price
+  chain into its fallback. Fixed to `renderView()` + regression test.
+- **Content-Security-Policy** added (plus COOP), scoped to exactly the origins the app uses.
+
+**Implemented — their genuinely valuable suggestions**
+- **Data Confidence Engine**: every refresh cross-checks CoinGecko against Binance for each tracked
+  symbol; desks are told the spread, and a divergence over 0.5% is flagged as unreliable.
+- **New free desks/data** (all keyless, CORS-verified): derivatives (Binance futures funding rate,
+  open interest, long/short account ratio), narratives (CoinGecko categories 24h leaders/laggards),
+  DeFi TVL (DeFiLlama), large BTC transfers (mempool.space, size only — explicitly *not* labelled
+  smart money). Free sources went from 3 → **8**, all shown on the FREE APIS chip.
+
+**Clarified — where their premise did not match this design**
+- "Never call an LLM from the frontend / keys in JS are exposed": this app ships **no** owner keys.
+  It is bring-your-own-key: a visitor's key lives in *their* localStorage and goes straight to *their*
+  provider. Verified: no token-shaped string exists anywhere in the repo or the built bundle. A backend
+  proxy + env vars only becomes necessary if we ever sell AI credits the owner pays for — at which point
+  the proxy also needs auth and rate limiting (documented, not built).
+- Redux/Zustand, WebSockets, a database: not applicable at this size. The app is a single file with a
+  plain state object; WebSockets would require a backend and the data sources are REST-only; localStorage
+  keeps the product deployable with zero infrastructure. Worth revisiting only with a paid tier.
+
+**Still open (next candidates)** — multi-desk debate + synthesis ("AI research team"), streaming
+token-by-token answers with a collapsible thought process, skeleton loaders while a desk works.
+
 ## Security & privacy posture (verified)
 
 - **No credentials in the repo or the site.** Scanned every revision for token-shaped strings: none.
@@ -55,7 +90,7 @@ ships `worker-config.example.json` instead. Never commit the real one: the repo 
 
 Host: **Netlify** (free plan; the site name and account are in the Netlify dashboard).
 Verified live: all routes 200, security headers applied, and the downloaded production
-HTML passes the full suite (**105/105**).
+HTML passes the full suite (**121/121**).
 
 ### New in this round (production customisations)
 

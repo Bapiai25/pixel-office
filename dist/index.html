@@ -1163,6 +1163,72 @@ async function fetchTrendingPools(){
   if(!rows.length) throw new Error('no trending rows');
   return {rows,at:Date.now(),src:'GeckoTerminal'};
 }
+async function fetchDerivatives(){
+  const out={};
+  await Promise.all(state.symbols.slice(0,4).map(async sym=>{
+    const pair=sym+'USDT';
+    const j=u=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);
+    const [pi,oi,ls]=await Promise.all([
+      j('https://fapi.binance.com/fapi/v1/premiumIndex?symbol='+pair),
+      j('https://fapi.binance.com/fapi/v1/openInterest?symbol='+pair),
+      j('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol='+pair+'&period=1h&limit=1')]);
+    if(!pi&&!oi&&!ls) return;
+    out[sym]={funding:pi&&pi.lastFundingRate!==undefined?Number(pi.lastFundingRate)*100:null,
+      mark:pi?Number(pi.markPrice):null,
+      oi:oi&&oi.openInterest!==undefined?Number(oi.openInterest):null,
+      ls:Array.isArray(ls)&&ls[0]?Number(ls[0].longShortRatio):null};
+  }));
+  if(!Object.keys(out).length) throw new Error('no derivatives rows');
+  return {rows:out,at:Date.now(),src:'Binance futures'};
+}
+async function fetchCategories(){
+  const res=await fetch('https://api.coingecko.com/api/v3/coins/categories');
+  if(!res.ok) throw new Error('categories '+res.status);
+  const list=(await res.json()).filter(c=>c.market_cap>5e8);
+  if(!list.length) throw new Error('no categories');
+  const by24=list.slice().sort((a,b)=>(b.market_cap_change_24h||0)-(a.market_cap_change_24h||0));
+  const byCap=list.slice().sort((a,b)=>(b.market_cap||0)-(a.market_cap||0));
+  return {gainers:by24.slice(0,6).map(c=>({name:c.name,chg:c.market_cap_change_24h||0,mcap:c.market_cap||0})),
+    losers:by24.slice(-4).reverse().map(c=>({name:c.name,chg:c.market_cap_change_24h||0,mcap:c.market_cap||0})),
+    leaders:byCap.slice(0,4).map(c=>({name:c.name,chg:c.market_cap_change_24h||0,mcap:c.market_cap||0})),
+    at:Date.now(),src:'CoinGecko categories'};
+}
+async function fetchDefiTvl(){
+  const res=await fetch('https://api.llama.fi/v2/chains');
+  if(!res.ok) throw new Error('llama '+res.status);
+  const chains=(await res.json()).filter(c=>typeof c.tvl==='number'&&c.tvl>0);
+  if(!chains.length) throw new Error('no chain rows');
+  chains.sort((a,b)=>b.tvl-a.tvl);
+  return {total:chains.reduce((t,c)=>t+c.tvl,0),
+    top:chains.slice(0,5).map(c=>({name:c.name,tvl:c.tvl})),at:Date.now(),src:'DeFiLlama'};
+}
+async function fetchLargeTransfers(){
+  const res=await fetch('https://mempool.space/api/mempool/recent');
+  if(!res.ok) throw new Error('mempool recent '+res.status);
+  const rows=(await res.json()).filter(t=>typeof t.value==='number')
+    .sort((a,b)=>b.value-a.value).slice(0,4)
+    .map(t=>({btc:t.value/1e8,fee:t.fee,vsize:t.vsize}));
+  if(!rows.length) throw new Error('no recent txs');
+  return {rows,at:Date.now(),src:'mempool.space'};
+}
+/* cross-source check: the same fact from two independent feeds */
+async function fetchCrossPrices(){
+  /* the check needs quotes to compare — pull them once if the feed has not landed yet */
+  if(!state.symbols.filter(s=>MARKET.q[s]).length){ try{ await refreshMarket(false); }catch(e){} }
+  const syms=state.symbols.filter(s=>MARKET.q[s]);
+  if(syms.length<1) throw new Error('no quotes to cross-check');
+  const pairs=await Promise.all(syms.map(s=>fetch('https://api.binance.com/api/v3/ticker/price?symbol='+s+'USDT')
+    .then(r=>r.ok?r.json():null).catch(()=>null)));
+  const out={};
+  syms.forEach((sym,i)=>{
+    const bn=pairs[i]?Number(pairs[i].price):null, cg=MARKET.q[sym]?MARKET.q[sym].price:null;
+    if(!(bn>0)||!(cg>0)) return;
+    const spread=Math.abs(bn-cg)/cg*100;
+    out[sym]={cg,bn,spread,agree:spread<0.5};
+  });
+  if(!Object.keys(out).length) throw new Error('no comparable pairs');
+  return {rows:out,at:Date.now(),src:'CoinGecko vs Binance'};
+}
 async function callFree(a,s,u){
   const res=await fetch('https://text.pollinations.ai/openai',{method:'POST',
     headers:{'content-type':'application/json'},
@@ -1181,7 +1247,12 @@ async function callFree(a,s,u){
 async function autoConnect(manual){
   const jobs=[['Fear & Greed',()=>fetchFearGreed().then(d=>{MARKET.fng=d;})],
     ['BTC mempool',()=>fetchMempoolFees().then(d=>{MARKET.fees=d;})],
-    ['Trending pools',()=>fetchTrendingPools().then(d=>{MARKET.trending=d;})]];
+    ['Trending pools',()=>fetchTrendingPools().then(d=>{MARKET.trending=d;})],
+    ['Derivatives',()=>fetchDerivatives().then(d=>{MARKET.deriv=d;})],
+    ['Narratives',()=>fetchCategories().then(d=>{MARKET.cats=d;})],
+    ['DeFi TVL',()=>fetchDefiTvl().then(d=>{MARKET.defi=d;})],
+    ['Large transfers',()=>fetchLargeTransfers().then(d=>{MARKET.whales=d;})],
+    ['Source check',()=>fetchCrossPrices().then(d=>{MARKET.conf=d;})]];
   MARKET.free={online:[],offline:[]};
   await Promise.allSettled(jobs.map(j=>j[1]().then(()=>MARKET.free.online.push(j[0])).catch(e=>MARKET.free.offline.push(j[0]+' ('+e.message+')'))));
   renderChips(); renderTicker();
@@ -1373,7 +1444,7 @@ function pushAlert(kind,title,body){
   if(state.alerts.length>60) state.alerts.pop();
   toast('ALERT: '+title,kind==='bull'?'good':'bad');
   SFX.alert(); addLog('!!','ALERT · '+title,'alert');
-  if(state.view==='alerts') renderAlerts();
+  if(state.view==='alerts') renderView();
   tgPush('alert', tgFormat('alert', title, body, 'market alert'));
   if(state.loop.on) state.loop.t=state.loop.every;      /* alerts wake the loop early */
   save();
@@ -1748,7 +1819,29 @@ function marketContext(){
   if(MARKET.fees) out.push('BTC MEMPOOL — fees: fast '+MARKET.fees.fastest+' sat/vB · half-hour '+MARKET.fees.halfHour+' · hour '+MARKET.fees.hour+' · economy '+MARKET.fees.economy+', source mempool.space, fetched '+ago(MARKET.fees.at)+'.');
   if(MARKET.trending) out.push('TRENDING POOLS (24h, GeckoTerminal): '+MARKET.trending.rows.map((r,i)=>(i+1)+'. '+r.name+' ('+r.network+')'+(r.chg!==null?' '+pct(r.chg):'')).join(' · ')+'.');
   else out.push('TRENDING POOLS: not connected (GeckoTerminal).');
-  out.push('NOT PROVIDED: fundamentals, tokenomics/unlocks, contract security, and direct X/YouTube/TikTok/Instagram/Reddit mentions. Partially provided free: BTC mempool fees, Fear & Greed sentiment, trending pools.');
+  if(MARKET.deriv){
+    const rows=Object.keys(MARKET.deriv.rows).map(k=>{const r=MARKET.deriv.rows[k];
+      return k+(r.funding!==null?' funding '+r.funding.toFixed(4)+'%':(r.funding===null?' funding n/a':''))+
+        (r.oi!==null?' · OI '+Math.round(r.oi).toLocaleString('en-US'):'')+
+        (r.ls!==null?' · long/short '+r.ls.toFixed(2):'');});
+    out.push('DERIVATIVES (Binance futures): '+rows.join(' | ')+'. Positive funding = longs paying shorts; that is positioning, not direction.');
+  } else out.push('DERIVATIVES: not connected (Binance futures).');
+  if(MARKET.cats) out.push('NARRATIVES 24h (CoinGecko categories, >$500M cap) — leaders: '+
+    MARKET.cats.gainers.slice(0,4).map(c=>c.name+' '+pct(c.chg)).join(', ')+' · laggards: '+
+    MARKET.cats.losers.slice(0,3).map(c=>c.name+' '+pct(c.chg)).join(', ')+'.');
+  else out.push('NARRATIVES: not connected (CoinGecko categories).');
+  if(MARKET.defi) out.push('DEFI TVL (DeFiLlama): $'+Math.round(MARKET.defi.total).toLocaleString('en-US')+
+    ' across chains; top: '+MARKET.defi.top.map(c=>c.name+' $'+Math.round(c.tvl).toLocaleString('en-US')).join(', ')+'. TVL is not revenue.');
+  else out.push('DEFI TVL: not connected (DeFiLlama).');
+  if(MARKET.whales) out.push('LARGE BTC TRANSFERS (mempool, unconfirmed, size only — no wallet labels): '+
+    MARKET.whales.rows.map(r=>r.btc.toFixed(2)+' BTC').join(', ')+'. A large transfer is NOT automatically buying or selling.');
+  else out.push('LARGE TRANSFERS: not connected (mempool.space).');
+  if(MARKET.conf){
+    const c=MARKET.conf.rows, bad=Object.keys(c).filter(k=>!c[k].agree);
+    out.push('SOURCE CHECK (independent feeds): '+Object.keys(c).map(k=>k+' '+c[k].spread.toFixed(3)+'% apart').join(', ')+
+      (bad.length?('. DIVERGENCE FLAGGED on '+bad.join(', ')+' — treat those prices as unreliable right now.'):('. All within 0.5% — sources agree.')));
+  }
+  out.push('NOT PROVIDED: fundamentals, tokenomics/unlocks, contract security, wallet labels and direct X/YouTube/TikTok/Instagram/Reddit mentions. Provided free: prices (3 sources), derivatives, categories, DeFi TVL, BTC fees, large transfers, Fear & Greed.');
   return out.join('\n');
 }
 async function ensureFresh(){
@@ -1796,17 +1889,31 @@ function offlineAnswer(A,kind,task){
         : 'INTERPRETATION: no large FDV/market-cap gap is visible in the data provided.')+
       '\nLIVE DATA UNAVAILABLE: unlock calendar, vesting cliffs, insider/VC allocation, holder concentration. Score: NO SCORE.',
     onchain:(MARKET.fees?'ON-CHAIN — DATA: BTC mempool fees '+MARKET.fees.fastest+' sat/vB fast · '+MARKET.fees.economy+' economy (mempool.space, fetched '+ago(MARKET.fees.at)+'). Active addresses, exchange flows, whale activity, TVL and protocol revenue are not connected — I will not estimate them. Source: a Dune, Glassnode or Nansen-class provider. Score: NO SCORE.':'ON-CHAIN — LIVE DATA UNAVAILABLE. The feed has no active addresses, exchange flows, whale activity, TVL, fees or protocol revenue. I will not estimate them. Source that would answer it: a Dune, Glassnode or Nansen-class provider. Score: NO SCORE.'),
-    quant:'QUANT — DATA: '+d.sym+' sample '+s.length+' points; 7d trend '+
+    quant:(MARKET.deriv&&MARKET.deriv.rows[d.sym]?('DERIVATIVES — DATA (Binance futures): '+
+      (MARKET.deriv.rows[d.sym].funding!==null?'funding '+MARKET.deriv.rows[d.sym].funding.toFixed(4)+'% per interval':'funding n/a')+
+      (MARKET.deriv.rows[d.sym].oi!==null?', open interest '+Math.round(MARKET.deriv.rows[d.sym].oi).toLocaleString('en-US'):'')+
+      (MARKET.deriv.rows[d.sym].ls!==null?', long/short account ratio '+MARKET.deriv.rows[d.sym].ls.toFixed(2):'')+
+      '. INTERPRETATION: funding and the long/short ratio describe positioning and who pays to hold it — they are crowding measures, not forecasts. Liquidations and basis are not in this feed.\n\n'):'')+
+      'QUANT — DATA: '+d.sym+' sample '+s.length+' points; 7d trend '+
       (s.length>3&&s[0]>0?pct(((s[s.length-1]-s[0])/s[0])*100):'n/a')+
       '; annualised vol estimate '+(vol7(d.sym)!==null?vol7(d.sym).toFixed(0)+'%':'n/a')+
       '; max drawdown in sample '+(drawdown(s)!==null?drawdown(s).toFixed(1)+'%':'n/a')+
       (d.sym!=='BTC'&&btcCorr(d.sym)!==null?'; BTC correlation '+btcCorr(d.sym).toFixed(2):'')+'.'+
       '\nINTERPRETATION: '+(C.quant===undefined?'unscored':(C.quant>=58?'risk-adjusted behaviour looks favourable on this small sample':(C.quant>=45?'neutral on this sample':'poor risk-adjusted behaviour on this sample')))+'.'+
       '\nThe sample is days, not years. Past behaviour does not guarantee future returns. Score: '+sc(C.quant),
-    narrative:(MARKET.trending?'NARRATIVE — DATA: trending pools (GeckoTerminal 24h): '+MARKET.trending.rows.slice(0,3).map(r=>r.name+' ('+r.network+')').join(', ')+'. Pool heat is capital flow, not a verdict on a narrative. Ranking full narratives needs social and search data this feed does not carry. Score: NO SCORE.':'NARRATIVE — LIVE DATA UNAVAILABLE. Ranking narratives needs social, search and capital-flow data this feed does not carry. Naming a hot narrative from memory is exactly the hype-following the charter forbids. Source: X/YouTube/Reddit APIs plus a sector-flow dataset. Score: NO SCORE.'),
+    narrative:(MARKET.cats?'NARRATIVE — DATA (CoinGecko categories 24h, >$500M cap): leaders '+
+      MARKET.cats.gainers.slice(0,4).map(c=>c.name+' '+pct(c.chg)).join(', ')+'; laggards '+
+      MARKET.cats.losers.slice(0,3).map(c=>c.name+' '+pct(c.chg)).join(', ')+
+      (MARKET.trending?'. Trending pools: '+MARKET.trending.rows.slice(0,3).map(r=>r.name).join(', ')+' (GeckoTerminal)':'')+
+      '. INTERPRETATION: category moves show where capital rotated in the last 24h; that is flow, not a durability test. '+
+      'Ranking full narratives still needs social and search data. Score: NO SCORE.':
+      (MARKET.trending?'NARRATIVE — DATA: trending pools (GeckoTerminal 24h): '+MARKET.trending.rows.slice(0,3).map(r=>r.name+' ('+r.network+')').join(', ')+'. Pool heat is capital flow, not a verdict on a narrative. Ranking full narratives needs social and search data this feed does not carry. Score: NO SCORE.':'NARRATIVE — LIVE DATA UNAVAILABLE. Ranking narratives needs social, search and capital-flow data this feed does not carry. Naming a hot narrative from memory is exactly the hype-following the charter forbids. Source: X/YouTube/Reddit APIs plus a sector-flow dataset. Score: NO SCORE.')),
     social:(MARKET.fng?'SOCIAL INTELLIGENCE — DATA: Fear & Greed Index '+MARKET.fng.value+'/100 ('+MARKET.fng.label+', alternative.me). That is one market-wide sentiment gauge. Direct X, YouTube, TikTok, Instagram and Reddit mentions are not connected, so mentions, engagement, growth rate and bot/paid classification cannot be measured — I will not guess them. Score: NO SCORE.':'SOCIAL INTELLIGENCE — LIVE DATA UNAVAILABLE. No sentiment or social feed is connected, so mentions, engagement, growth rate, bot/paid classification and trend velocity cannot be measured. Sentiment is signal data; I have no signal, so I will not guess one. Score: NO SCORE.'),
     macro:'NEWS & MACRO — LIVE DATA UNAVAILABLE. No rates, CPI, DXY, yields, ETF-flow or policy feed is connected, so I cannot classify RISK ON/NEUTRAL/RISK OFF from data. FACT from the price feed only: tracked breadth is '+list.filter(x=>x.chg>0).length+'/'+list.length+' up over 24h. Score: NO SCORE.',
-    whale:'WHALE / SMART-MONEY — LIVE DATA UNAVAILABLE. No labelled wallet data is connected. A large transfer is not automatically smart money, and I will not characterise wallets I cannot see. Source: a Nansen/Arkham-class provider. Score: NO SCORE.',
+    whale:(MARKET.whales?'WHALE / SMART-MONEY — DATA (mempool.space, unconfirmed, size only, no labels): largest recent BTC transfers '+
+      MARKET.whales.rows.map(r=>r.btc.toFixed(2)+' BTC').join(', ')+
+      '. INTERPRETATION: none offered. A large transfer is not automatically smart money — it can be an exchange internal move, a custody shuffle or a sale. Wallet labels, exchange in/outflow and accumulation/distribution need a Nansen/Arkham-class provider. Score: NO SCORE.':
+      'WHALE / SMART-MONEY — LIVE DATA UNAVAILABLE. No labelled wallet data is connected. A large transfer is not automatically smart money, and I will not characterise wallets I cannot see. Source: a Nansen/Arkham-class provider. Score: NO SCORE.'),
     security:'SECURITY & SCAM — LIVE DATA UNAVAILABLE. Contract address, audits, ownership, liquidity lock, holder concentration and honeypot checks need a contract dataset. Nothing here authorises buying a small or new token: absence of red flags is not evidence of safety. Score: NO SCORE.',
     regulatory:'REGULATORY / LEGAL — LIVE DATA UNAVAILABLE. No regulatory or legal feed is connected and I do not give legal advice. Nothing here is a legal position. Score: NO SCORE.',
     risk:'PORTFOLIO RISK — DATA: open positions '+(state.positions.length||0)+', cash '+money(state.cash)+
@@ -3059,7 +3166,7 @@ function renderTicker(){
   }
   const items=[];
   qs().forEach(d=>{
-    items.push(d.sym+' <i>$'+fmtPrice(d.price)+'</i> '+(d.chg>=0?'<e>':'<i>')+pct(d.chg)+'</i>');
+    items.push(esc(d.sym)+' <i>$'+fmtPrice(d.price)+'</i> '+(d.chg>=0?'<e>':'<i>')+pct(d.chg)+'</i>');
   });
   if(!items.length) items.push('FEED '+MARKET.status.toUpperCase()+' — no quotes yet');
   const heads={
@@ -3071,9 +3178,9 @@ function renderTicker(){
   const busy=state.tasks.filter(t=>t.status==='working').slice(0,7);
   busy.forEach(t=>{
     const A=agent(t.assignedTo);
-    if(A) items.push('<e>'+A.name.split(' ')[0].toUpperCase()+'</e> <i>'+(heads[A.id]||A.dept.toLowerCase())+'</i>: '+short(t.title,58));
+    if(A) items.push('<e>'+esc(A.name.split(' ')[0].toUpperCase())+'</e> <i>'+esc(heads[A.id]||A.dept.toLowerCase())+'</i>: '+esc(short(t.title,58)));
   });
-  state.alerts.slice(0,3).forEach(a=>items.push('<i>ALERT</i> '+short(a.title+' — '+a.body,80)));
+  state.alerts.slice(0,3).forEach(a=>items.push('<i>ALERT</i> '+esc(short(a.title+' — '+a.body,80))));
   items.push('<e>MISSING DATASETS ARE REPORTED, NEVER INVENTED</e> — connect social / on-chain / macro providers to light up those desks');
   rail.innerHTML=items.map(t=>'<span>'+t+'</span>').join('');
 }
@@ -3706,6 +3813,7 @@ window.__DESK__={state,MARKET,units,ORG,BENCH,HOUSE_RULES,WEIGHTS,MISSING,RW,RH,
   learn,rateAnswer,creditTrade,officeDigest,deskContext,
   recordTraining,rateRecord,tradeRecord,trainingJSONL,exportTraining,
   LOOKS,mkAgent,tgSend,tgPush,tgFormat,tgReady,tgTest,tgEsc,loopTick,LOOP_QUEUE,
+  renderTasks,
   tagged,LLM_CFG,testLLM:null};
 </script>
 </body>

@@ -86,8 +86,11 @@ function makeEl(tag){
       if(v!=='') parseInto(el,v); }
   });
   Object.defineProperty(el,'textContent',{
-    get(){ return el._text; },
-    set(v){ el._text=String(v); el._inner=String(v); }
+    /* aggregate children like a real DOM, so text-content assertions are faithful */
+    get(){ return (el.children&&el.children.length)
+      ? el.children.map(c=>c.textContent||'').join('')
+      : el._text; },
+    set(v){ el._text=String(v); el._inner=String(v); el.children.length=0; }
   });
   return el;
 }
@@ -151,6 +154,35 @@ const tgCalls=[];
 const flags={pollinationsBudget:false};
 async function fakeFetch(url,opts){
   url=String(url);
+  /* --- newer free sources (checked before the broader matches) --- */
+  if(url.indexOf('coingecko.com/api/v3/coins/categories')!==-1)
+    return {ok:true,status:200,json:async()=>[
+      {id:'ai',name:'Artificial Intelligence',market_cap:3.1e10,market_cap_change_24h:6.2},
+      {id:'rwa',name:'Real World Assets',market_cap:1.2e10,market_cap_change_24h:3.4},
+      {id:'defi',name:'DeFi',market_cap:9.0e10,market_cap_change_24h:-1.8},
+      {id:'meme',name:'Meme',market_cap:5.4e10,market_cap_change_24h:-4.1},
+      {id:'layer-1',name:'Layer 1',market_cap:2.2e12,market_cap_change_24h:1.1}]};
+  if(url.indexOf('api.llama.fi/v2/chains')!==-1)
+    return {ok:true,status:200,json:async()=>[
+      {name:'Ethereum',tvl:6.1e10},{name:'Solana',tvl:9.4e9},{name:'BSC',tvl:5.1e9},
+      {name:'Base',tvl:3.3e9},{name:'Arbitrum',tvl:2.8e9}]};
+  if(url.indexOf('mempool.space/api/mempool/recent')!==-1)
+    return {ok:true,status:200,json:async()=>[
+      {txid:'aa',fee:1200,vsize:200,value:81234567890},
+      {txid:'bb',fee:900,vsize:180,value:24100000000},
+      {txid:'cc',fee:400,vsize:140,value:5100000000}]};
+  if(url.indexOf('fapi.binance.com')!==-1){
+    if(url.indexOf('premiumIndex')!==-1)
+      return {ok:true,status:200,json:async()=>({symbol:'BTCUSDT',markPrice:'78411.5',indexPrice:'78450.0',lastFundingRate:'0.00011200'})};
+    if(url.indexOf('openInterest')!==-1)
+      return {ok:true,status:200,json:async()=>({symbol:'BTCUSDT',openInterest:'81234.5'})};
+    return {ok:true,status:200,json:async()=>[{symbol:'BTCUSDT',longAccount:'0.61',shortAccount:'0.39',longShortRatio:'1.56'}]};
+  }
+  if(url.indexOf('api.binance.com/api/v3/ticker/price')!==-1){
+    const sym=(url.match(/symbol=([A-Z]+)USDT/)||[])[1]||'BTC';
+    const px={BTC:77830,ETH:3122,SOL:142.4}[sym]||100;
+    return {ok:true,status:200,json:async()=>({symbol:sym+'USDT',price:String(px)})};
+  }
   if(url.indexOf('api.telegram.org')!==-1){
     tgCalls.push({url,body:opts&&opts.body?String(opts.body):''});
     if(url.indexOf('BADTOKEN')!==-1)
