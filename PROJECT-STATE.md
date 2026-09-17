@@ -4,6 +4,20 @@
 
 ---
 
+## Source of truth
+
+**GitHub (public):** https://github.com/Bapiai25/pixel-office — 9 commits, everything attributed to
+`Bapiai25`. Auth is the GitHub CLI (`gh`, installed at `~/.local/bin/gh`) with the device-flow token;
+`gh auth setup-git` wires git to it, so plain `git push` works.
+
+```bash
+cd "/Users/ray/Documents/AI work/deepseek"
+git add -A && git commit -m "…" && git push        # normal workflow from here
+```
+
+`worker-config.json` (Telegram token) and `worker-log.jsonl` are **gitignored on purpose** — the repo
+ships `worker-config.example.json` instead. Never commit the real one: the repo is public.
+
 ## TL;DR — LIVE IN PRODUCTION
 
 **The site is deployed and public:**
@@ -120,7 +134,8 @@ answer your questions about digital assets.
 | `dist/og.png` | 1200×630 social preview image, generated from the floor render. |
 | `tools/` | Test + render tooling + deploy scripts + the background worker. |
 | `worker-config.json` | Worker settings (telegram token, LLM key, interval, rotation). |
-| `worker-log.jsonl` | Every autonomous cycle the worker has run (audit + training data). |
+| `worker-log.jsonl` | Every autonomous cycle the worker has run (audit + training data) — gitignored. |
+| `worker-config.example.json` | Token-free template for the worker config (safe to commit). |
 | `previews/` | Raw BMP renders; PNG copies in `office-room-preview.png`, `office-cast-preview.png`. |
 | `.git` | Repo initialised, everything committed (`Pixel Office: crypto research floor + play space…`). |
 
@@ -200,12 +215,14 @@ image — that's how the character previews are produced and how visual changes 
 
 1. **Turn on Telegram** — paste the BotFather token + chat id into ⚙ AI / API → TELEGRAM BOT
    (browser pushes) and/or `worker-config.json` (always-on worker). Nothing else pending.
-2. **Custom domain** — buy one and attach it in the Cloudflare dashboard (HTTPS is automatic).
-3. **Monetization** — add a Stripe Payment Link or LemonSqueezy checkout to the header when
+2. **Optional: GitHub Pages** — the repo can also serve the site for free (copy `dist/` to `docs/`,
+   then Settings → Pages → deploy from `main` / `docs`). Netlify stays the primary host.
+3. **Custom domain** — buy one and attach it in the Cloudflare dashboard (HTTPS is automatic).
+4. **Monetization** — add a Stripe Payment Link or LemonSqueezy checkout to the header when
    you're ready; no backend needed.
-4. **Rate limits** — public market APIs are fine for personal/small traffic. If it grows,
+5. **Rate limits** — public market APIs are fine for personal/small traffic. If it grows,
    put price fetching behind a small cache or a paid plan; only the endpoint URL changes.
-5. **Optional**: ship `hermes-pixel-office.html` too (it needs a public state endpoint to be
+6. **Optional**: ship `hermes-pixel-office.html` too (it needs a public state endpoint to be
    useful in production — currently it points at localhost).
 
 ---
